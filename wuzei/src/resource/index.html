@@ -1,0 +1,493 @@
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <script src="http://wuzei.localhost/resource/vue@3.4.12/vue.global.prod.js"></script>
+    <script src="http://wuzei.localhost/resource/rxjs@7.8.1/rxjs.umd.js"></script>
+    <script src="http://wuzei.localhost/resource/@vueuse/rxjs@10.9.0/index.iife.js"></script>
+    <style>
+      .canvasClass {
+        position: absolute;
+        pointer-events: none;
+        image-rendering:pixelated;
+        left: 10px;
+        top: 10px;
+      }
+
+      .contextmenu {
+        position: fixed;
+        z-index: 99;
+        background: #fff;
+        color: #555;
+        font-size: 11px;
+        user-select: none;
+        box-shadow: 2px 2px 2px 0 #8f9091;
+        border: 1px solid #c6c6c6;
+        padding: 0;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        margin: 0;
+        outline: 0;
+        display: none;
+      }
+      .contextmenu div {
+        box-sizing: border-box;
+        display: block;
+        padding: 8px 8px 8px 28px;
+        width: 250px;
+        position: relative;
+        cursor: default;
+        font-size: 11px;
+        font-family: sans-serif;
+      }
+      .contextmenu div:hover {
+        background: #ebebeb;
+      }
+      .contextmenu hr {
+        border: 1px solid #e9e9e9;
+        border-bottom: 0;
+        margin-top: 5px;
+        margin-bottom: 5px;
+      }
+
+    </style>
+  </head>
+  <body>
+    <div id ="app">
+      <!-- canvas -->
+      <div id="canvas" ref="divRef"
+        style="position: relative; transform-origin: top left; background-color: gray; overflow: hidden;" 
+        :style="{ transform: 'scale(' + cnvParams.zoomfactor + ')', width: cnvParams.width+20, height: cnvParams.height+20 }" >
+        <canvas class="canvasClass" ref="canvasRef" style="background-color: darkgrey;"></canvas>
+        <canvas class="canvasClass" ref="selectRef" :width="cnvParams.width" :height="cnvParams.height"></canvas>
+      </div>
+
+      <!-- context-menu / mouse-stalker -->
+      <context-menu ref="contextRef" v-on:callback="clickContextMenu($event)"></context-menu>
+      <mouse-stalker ref="stalkerRef" ></mouse-stalker>
+
+  </body>
+  <script type="module">
+    console.log("index.html")
+    import { convertClientToReal, convertSelectedToRect } from "./test.js"
+
+    const { createApp, onMounted, nextTick, ref } = window.Vue;
+    const { /* from */ /* fromEvent */ of, merge, partition,
+      filter, first, delay, map, takeUntil, debounceTime, scan,
+      bufferToggle, switchMap, mergeMap,  
+      share, tap
+    } = window.rxjs;
+    const { from, fromEvent } = window.VueUse;
+
+    const app = createApp({
+      setup() {
+        const busy = ref(true);
+        const [divRef, canvasRef] = [ref(null), ref(null)];
+        const [selectRef, selected] = [ref(null), ref({ startPos:{ x: 0, y: 0 }, endPos:{ x: 0, y: 0 } })]; // real pos
+        const [contextRef, stalkerRef] = [ref(null), ref(null)];
+
+        const cnvParams = ref({ width:320, height:240, zoom:0, zoomfactor:1, rendering : false });
+        const rawParams = ref({ bitshift:0, color:0 })
+        const path = ref({path:"", script:false})
+
+        /******** action ********/
+        const action = (e) => {
+          console.log(e);
+          switch(e.type){
+            case "alert":
+              alert(e.payload[0])
+              break;
+            case "confirm":
+              let result = confirm(e.payload[0])
+              break;
+            case "select":
+              selected.value = { startPos:{ x: Number(e.payload[0]), y: Number(e.payload[1])}, endPos:{ x: Number(e.payload[2]), y: Number(e.payload[3])} }
+              break;
+            case "zoom":
+              cnvParams.value = { ...cnvParams.value, zoom: Number(e.payload[0]) }
+              break;
+            case "bitshift":
+              rawParams.value = { ...rawParams.value, bitshift: Number(e.payload[0]) }
+              break;
+            default:
+              break;
+          }
+        }
+
+        /******** view ********/
+        const isBusy$ = from(busy);
+        isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
+
+        /* param changed */
+        merge(from(rawParams), from(cnvParams), fromEvent(window, 'resize')).subscribe(e => {
+          stalkerRef.value.show({shiftKey : `bitshift : ${rawParams.value.bitshift}`})
+          stalkerRef.value.show({altKey : `zoom : ${cnvParams.value.zoom} ${window.devicePixelRatio.toFixed(2)} ${(window.outerWidth / window.innerWidth).toFixed(2)}`})
+          stalkerRef.value.show({ctrlKey :`ctrl ${window.devicePixelRatio.toFixed(2)} ${(window.outerWidth / window.innerWidth).toFixed(2)}`})
+        });
+
+        from(cnvParams).subscribe((e) => { 
+          e.zoomfactor = 1.2 ** e.zoom;
+          canvasRef.value.style.imageRendering = e.rendering ? "pixelated" : "auto";
+        });
+
+        from(selected).subscribe((e) => {
+          const ctx = selectRef.value.getContext("2d");
+          ctx.beginPath();
+          ctx.clearRect(0, 0, selectRef.value.width, selectRef.value.height);
+          const {left, top, width, height} = convertSelectedToRect(e);
+          console.log(left, top, width, height)
+          if(width > 0 && height > 0){
+            ctx.fillStyle = "rgb(0, 0, 255, 0.2)";
+            ctx.fillRect(left, top, width, height);
+            console.log(left, top, width, height)
+            ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
+            console.log(left + 0.5, top + 0.5, width - 1, height - 1)
+          }
+          ctx.closePath();
+        });
+
+        from(rawParams).subscribe(async (e) => { // scan((acc, curr) => ({ old: acc, new: curr}), null))
+          busy.value = true;
+          const dst = await Wuzei.fetchPng(canvasRef.value, { type : "refresh", payload : { shift: e.bitshift, color: e.color } });
+          cnvParams.value = { ...cnvParams.value, width:dst.width, height:dst.height }
+          busy.value = false;
+        });
+  
+        from(path).subscribe(async (e) => {
+          busy.value = true;
+          switch(e.script){
+            case true: {
+                const res = await Wuzei.fetchJson({ type: "process", payload : ["dotnet", `script ./script.csx -- "${e.path}"` ] });
+                console.log("read file use script", res);
+              }
+              break;
+            case false: {
+                const res = await Wuzei.fetchJson({ type : "read_file", payload : { path: e.path } });
+                console.log("read file", e, res)
+              }
+              break;
+          }
+          busy.value = false;
+          rawParams.value = { ...rawParams.value }
+        });
+
+        /******** key event ********/
+        const keydown$ = fromEvent(document, 'keydown').pipe(filter(n => n.repeat === false), share());
+        keydown$.pipe(filter(n => n.key.startsWith('Arrow'))).subscribe( e => {
+          switch(e.key){
+            case 'ArrowUp':
+              rawParams.value = { ...rawParams.value , bitshift: rawParams.value.bitshift + 1 };
+              break;
+            case 'ArrowDown':
+              rawParams.value = { ...rawParams.value , bitshift: rawParams.value.bitshift - 1 };
+              break;
+            case 'ArrowRight':
+              rawParams.value = { ...rawParams.value , color: rawParams.value.color + 1 };
+              break;
+            case 'ArrowLeft':
+              rawParams.value = { ...rawParams.value , color: rawParams.value.color - 1 };
+              break;
+            default:
+          }
+          e.preventDefault();
+        });
+        keydown$.pipe(filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )).subscribe(async (e) => {
+          console.log('keydown + shortcut', e)
+        });
+        keydown$.subscribe(async (e) => {
+          console.log('keydown', e)
+          switch(e.key){
+            case '\\':
+              rendering.value = !rendering.value;
+              e.preventDefault();
+              break;
+            default:
+          }
+        });
+
+
+        /******** mouse event ********/
+        const mousemove$ = fromEvent(document, 'mousemove').pipe(map(e => convertClientToReal(canvasRef.value, selected.value, e)), share());
+        const mousemove_0$ = mousemove$.pipe(filter(e => e.buttons == 0 && !e.altKey && !e.shiftKey && !e.ctrlKey), share());
+        const mousemove_1$ = mousemove$.pipe(filter(e => e.buttons == 1), share());
+        const mousemove_4$ = mousemove$.pipe(filter(e => e.buttons == 4), share());
+        const mouseup$ = fromEvent(document, 'mouseup');
+
+        /* move in canvas */
+        const [mousemoveInn$, mousemoveOut$] = partition(mousemove_0$, e => e.isInCanvas);
+        mousemoveInn$.pipe(
+          filter(e => e.buttons === 0),
+          tap(e => { stalkerRef.value.show({unModified : `${e.realX} ${e.realY}`}) }),
+          debounceTime(120)
+        ).subscribe(async (e) => {
+          const res = await Wuzei.fetchJson({ type: "get_pixel", payload : { x: e.realX, y : e.realY } });
+          stalkerRef.value.show({unModified : `${res.x},${res.y}\r\n${res.data}`})
+        });
+
+        /* move with left click in canvas */
+        const mousedownLeft$ = fromEvent(divRef, 'mousedown').pipe(
+          filter(e=> e.buttons == 1),
+          map(e => convertClientToReal(canvasRef.value, selected.value, e)),
+          tap(e => { 
+            stalkerRef.value.show({unModified : `${e.realX} ${e.realY}`})
+            selected.value = { startPos: { x: e.realX, y: e.realY}, endPos: { x: e.realX, y: e.realY} } 
+          }),
+          mergeMap(start => mousemove_1$.pipe(
+            map(e => convertClientToReal(canvasRef.value, selected.value, e)),
+            map(end => ({ start: start, end: end })),
+            tap(e => { 
+              stalkerRef.value.show({unModified : `${e.end.realX} ${e.end.realY}`})
+              selected.value = { ...selected.value, endPos: { x: e.end.realX, y: e.end.realY} }
+            }),
+            takeUntil(mouseup$),
+          ))
+        );
+        mousedownLeft$.subscribe(e => { /* console.log("drag up", convertSelectedToRect(selected.value)) */ });
+
+        /* right click : contextmenu */
+        fromEvent(divRef, 'contextmenu').subscribe( e => {
+          const dst = convertClientToReal(canvasRef.value, selected.value, e)
+          switch(dst.isInSelected){
+            case true:
+              contextRef.value.show(e.clientX, e.clientY, contextItemsA)
+              break;
+            case false:
+              contextRef.value.show(e.clientX, e.clientY, contextItemsB)
+              break;
+          }
+          e.preventDefault();
+        })
+        // context items
+        const contextItemsA = [
+          { type : 'div', key :'copy_selected', value: 'Copy Selected' },
+          { type : 'div', key :'selected', value: 'Selected Coordinate' },
+          { type : 'hr' }, 
+          { type : 'div', key :'subprocess_csx', value: 'call csx subprocess ' },
+          { type : 'div', key :'subprocess_py', value: 'call py subprocess' },
+          { type : 'div', key :'subprocess_rs', value: 'call rust subprocess' },
+        ]
+        const contextItemsB = [
+          { type : 'div', key :'copy_full', value: 'Copy Full' },
+        ]
+        // context event
+        const clickContextMenu = (e) => {
+          console.log("clickContextMenu", e)
+          const pos = convertSelectedToRect(selected.value);
+          switch(e){
+            case 'copy_selected':
+              Wuzei.copyImageToClipboard(canvasRef.value, pos.left, pos.top, pos.width, pos.height);
+              break;
+            case 'copy_full':
+              Wuzei.copyImageToClipboard(canvasRef.value, 0, 0, canvasRef.value.width, canvasRef.value.height);
+              break;
+            case 'selected':
+              alert(`selected (${pos.left}, ${pos.top}) - (w : ${pos.width}, h : ${pos.height})`);
+              break;
+            case 'subprocess_csx':
+              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["dotnet", `script ./script.csx -- '${JSON.stringify(JSON.stringify(pos))}'` ] }));
+              break;
+            case 'subprocess_py':
+              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["py", `./script.py '${JSON.stringify(JSON.stringify(pos))}'` ] }));
+              break;
+            case 'subprocess_rs':
+              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["rust-script", `./script.rs '${JSON.stringify(JSON.stringify(pos))}'` ] }));
+              break;
+            default:
+              break;
+          }
+          contextRef.value.close()
+        };
+
+        /*** center click : command prompt ***/
+        const [centerClickShallow$, centerClickDeep$] = partition(
+          fromEvent(divRef, 'mousedown').pipe(
+            filter(e=> e.buttons == 4),
+            switchMap((e) => merge( of(e).pipe(delay(200)), mouseup$).pipe(first()))
+          ), e => e.type === 'mouseup'
+        );
+        centerClickShallow$.subscribe(e=>{ console.log("Center shallow click"); });
+        centerClickDeep$.subscribe(e=>{ 
+          console.log("Center deep click") 
+          let result = prompt('input command').split(/\s+/);
+          action({ type: result[0], payload: result.slice(1) });
+        });
+        
+        /*** side click ***/
+        fromEvent(document, 'mousedown').pipe(filter(e => e.buttons == 8 || e.buttons == 16)).subscribe(e => {
+          cnvParams.value = { ...cnvParams.value, rendering : !cnvParams.value.rendering};
+          e.preventDefault();
+        });
+
+        /*** wheel event ***/
+        const mousewheel$ = fromEvent(divRef, 'wheel').pipe(tap(ev => { /* ev.preventDefault() */ } ), share());
+
+        /* shift event : default 横スクロール -> disable */
+        const [wheelShiftIsBusy$, wheelShiftIsNotBusy$] = partition(mousewheel$.pipe(
+          filter(e => e.shiftKey && !e.ctrlKey && !e.altKey),
+          tap(e => e.preventDefault() )
+        ), _ => busy.value);
+        wheelShiftIsNotBusy$.subscribe(e => {
+          if(e.deltaY != 0){
+            rawParams.value = {...rawParams.value, bitshift : rawParams.value.bitshift + (e.deltaY > 0 ? -1 : 1) }
+          }
+        });
+        wheelShiftIsBusy$.pipe(bufferToggle(isBusy$, ()=>isBusy$ ),filter(e => e.length > 0)).subscribe(e => {
+          const dst = e.reduce((acc, curr) => acc + (curr.deltaY > 0 ? -1 :1), rawParams.value.bitshift)
+          rawParams.value = {...rawParams.value, bitshift : dst }
+        });
+
+        /* ctrl : default動作 */
+        mousewheel$.pipe(filter(e=> !e.shiftKey && e.ctrlKey && !e.altKey)).subscribe((e) => { });
+
+        /* alt event */
+        mousewheel$.pipe(filter(e=> !e.shiftKey && !e.ctrlKey && e.altKey)).subscribe((e) => {
+          cnvParams.value = { ...cnvParams.value, zoom : cnvParams.value.zoom + (e.deltaY > 0 ? -1 : 1)};
+          e.preventDefault();
+        });
+
+
+        /******** other event ********/
+        const newWindowReq$ = fromEvent(window.chrome.webview, 'newWindowReq');
+        newWindowReq$.subscribe(async (e) => {
+          console.log('newWindowReq', e);
+          if(e.detail.type === "file") {
+            switch(e.detail.payload.split('.').pop().toLowerCase()){
+              case 'hraw':
+              case 'zip':
+                path.value = { path : e.detail.payload, script : false };
+                break;
+              default:
+                path.value = { path : e.detail.payload, script : true };
+                break;
+            }
+          }
+        });
+
+        const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
+        namedPipe$.subscribe(e => { 
+          console.log("namedPipe",e)
+          action(e.detail) 
+        });
+
+        /******** onMounted ********/
+        onMounted(() => { 
+          console.log('mounted');
+          busy.value = false;
+          cnvParams.value = {...cnvParams.value};
+          rawParams.value = {...rawParams.value};
+          nextTick(() => { console.log('rendered'); });
+        })
+        fromEvent('load').subscribe(()=>{ console.log('loaded'); });
+
+        /******** mount ********/
+        return {
+          busy, 
+          divRef, canvasRef, selectRef, cnvParams, 
+          contextRef, clickContextMenu,
+          stalkerRef
+        }
+      }
+    });
+
+    app.component('context-menu', {
+      setup() {
+        const context = ref({left:"0px", top:"0px", display:"non"})
+        const items = ref({})
+        fromEvent(document, 'mousedown').subscribe(e=>{ 
+          if(!e.target.closest('.contextmenu')){
+            context.value = { left:`0px`, top:`0px`, display:"none" }
+          }
+        });
+        return { items, context }
+      },
+      methods: {
+        show(x, y, items) { 
+          this.items = items;
+          this.context = { left:`${x}px`, top:`${y}px`, display:"block" } 
+        },
+        close() { this.context = { left:`0px`, top:`0px`, display:"none" } },
+      },
+      template: `
+        <div class="contextmenu" :style="context" >
+          <template v-for="{type, key, value} in items">
+            <div v-if="type === 'div'" @click="$emit('callback', key)">{{ value }}</div>
+            <hr v-if="type === 'hr'">
+          </template>
+        </div>
+      `
+    });
+    app.component('mouse-stalker', {
+      props: ['target'],
+      setup() {
+        const circleStyle = ref({
+          position: "fixed", pointerEvents: "none", userSelect: "none",
+          top: "-2.5px", left: "-2.5px", width: "6px", height: "6px",
+          border: "solid 0.8px #FFF", outline: "solid 0.6px #000", outlineOffset: "0px",
+          borderRadius: "50%", zIndex: "98"
+        })
+        const labelStyle = ref({
+          position: "fixed",pointerEvents: "none",userSelect: "none",
+          top: "10px",left: "10px",width: "100px",height: "40px",
+          overflow: "hidden",
+          fontSize:" x-small",whiteSpace: "pre-line", zIndex: "98"
+        })
+        const transform = ref({transform : "translate(-100px, -100px)"})
+        const origin = ref({ left: 0, top: 0 })
+        const modifier = ref({ shiftKey: false, ctrlKey: false, altKey : false })
+        const text = ref({ unModified: "", shiftKey: "", ctrlKey: "", altKey : "" })
+        const showtext = ref("")
+        const visually = ref(false)
+
+        fromEvent(document.getElementById("canvas"), "mouseenter").subscribe(e => {
+          visually.value = true;
+        });
+        fromEvent(document.getElementById("canvas"), "mouseleave").subscribe(e => {
+          visually.value = false
+        });
+        fromEvent(document, 'mousemove').subscribe(e => {
+          origin.value.left = window.innerWidth > e.clientX + 100 ?  10 : -90;
+          origin.value.top = window.innerHeight > e.clientY + 30 ? 10 : -30;
+          transform.value = {transform : `translate(${e.clientX}px, ${e.clientY}px)`};
+          // const rect = cursorRef.value.getBoundingClientRect();
+        });
+        merge(fromEvent(document, 'keydown'), fromEvent(document, 'keyup'))
+          .pipe(filter(e => e.repeat === false && ["Shift","Control","Alt"].includes(e.key)))
+          .subscribe(e => {
+            modifier.value = { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey : e.altKey }
+          });
+        merge(from(text), from(modifier)).subscribe(e => {
+          const key = modifier.value;
+          switch(true){
+            case key.shiftKey && !key.ctrlKey && !key.altKey:
+              showtext.value = text.value.shiftKey;
+              break;
+            case !key.shiftKey && key.ctrlKey && !key.altKey:
+              showtext.value = text.value.ctrlKey;
+              break;
+            case !key.shiftKey && !key.ctrlKey && key.altKey:
+              showtext.value = text.value.altKey;
+              break;
+            default:
+              showtext.value = text.value.unModified;
+              break;
+          }
+        });
+        return { circleStyle, transform, origin, labelStyle, showtext, text, visually }
+      },
+      methods: {
+        move(x, y) { 
+          // this.transform = {transform : `translate(${x}px, ${y}px)`} 
+        },
+        show(val) { this.text = { ...this.text, ...val } }
+      },
+      template: `
+        <div v-if="visually" :style="{...circleStyle, ...transform}"></div>
+        <div v-if="visually" :style="{...labelStyle, ...transform, ...origin,'-webkit-text-stroke': '2px white'}">{{showtext}}</div>
+        <div v-if="visually" :style="{...labelStyle, ...transform, ...origin, color: 'black'}">{{showtext}}</div>
+      `
+    });
+
+    app.mount('#app');
+  </script>
+</html>
