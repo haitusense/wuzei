@@ -199,7 +199,7 @@
           console.log('keydown', e)
           switch(e.key){
             case '\\':
-              rendering.value = !rendering.value;
+              cnvParams.value = { ...cnvParams.value, rendering : !cnvParams.value.rendering};
               e.preventDefault();
               break;
             default:
