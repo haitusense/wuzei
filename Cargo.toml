@@ -1,0 +1,9 @@
+[workspace]
+
+members = [
+  "wuzei",
+  "huazhi",
+]
+
+[workspace.dependencies]
+huazhi = { path = "./huazhi" }
