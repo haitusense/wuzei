@@ -156,18 +156,30 @@
   
         from(path).subscribe(async (e) => {
           busy.value = true;
-          switch(e.script){
-            case true: {
-                const res = await Wuzei.fetchJson({ type: "process", payload : ["dotnet", `script ./script.csx -- "${e.path}"` ] });
+          switch(e.path.split('.').pop().toLowerCase()){
+            case 'hraw':
+            case 'zip':
+              {
+                const res = await Wuzei.fetchJson({ type : "read_file", payload : { path: e.path } });
+                console.log("read file", e, res);
+              }
+              break;
+            case 'png':
+            case 'bmp': 
+              {
+                const res = await Wuzei.fetchJson({ type : "read_file_png", payload : { path: e.path } });
+                console.log("read file png", e, res);
+              }
+              break;
+            default:
+              {
+                const json = { path : e.path };
+                const res = await Wuzei.fetchJson({ type: "process", payload : ["dotnet", `script ./script.csx -- '${JSON.stringify(JSON.stringify(json))}'` ] });
                 console.log("read file use script", res);
               }
               break;
-            case false: {
-                const res = await Wuzei.fetchJson({ type : "read_file", payload : { path: e.path } });
-                console.log("read file", e, res)
-              }
-              break;
           }
+          
           busy.value = false;
           rawParams.value = { ...rawParams.value }
         });
@@ -206,7 +218,6 @@
           }
         });
 
-
         /******** mouse event ********/
         const mousemove$ = fromEvent(document, 'mousemove').pipe(map(e => convertClientToReal(canvasRef.value, selected.value, e)), share());
         const mousemove_0$ = mousemove$.pipe(filter(e => e.buttons == 0 && !e.altKey && !e.shiftKey && !e.ctrlKey), share());
@@ -218,11 +229,12 @@
         const [mousemoveInn$, mousemoveOut$] = partition(mousemove_0$, e => e.isInCanvas);
         mousemoveInn$.pipe(
           filter(e => e.buttons === 0),
-          tap(e => { stalkerRef.value.show({unModified : `${e.realX} ${e.realY}`}) }),
+          tap(e => { stalkerRef.value.show({unModified : `(${e.realX},${e.realY})`}) }),
           debounceTime(120)
         ).subscribe(async (e) => {
           const res = await Wuzei.fetchJson({ type: "get_pixel", payload : { x: e.realX, y : e.realY } });
-          stalkerRef.value.show({unModified : `${res.x},${res.y}\r\n${res.data}`})
+          const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
+          stalkerRef.value.show({unModified : `(${res.x},${res.y})\r\n${res.data}\r\n${toHex(res.data)}`})
         });
 
         /* move with left click in canvas */
@@ -230,14 +242,14 @@
           filter(e=> e.buttons == 1),
           map(e => convertClientToReal(canvasRef.value, selected.value, e)),
           tap(e => { 
-            stalkerRef.value.show({unModified : `${e.realX} ${e.realY}`})
-            selected.value = { startPos: { x: e.realX, y: e.realY}, endPos: { x: e.realX, y: e.realY} } 
+            stalkerRef.value.show({unModified : `(${e.realX},${e.realY})`})
+            selected.value = { startPos: { x: e.realX, y: e.realY}, endPos: { x: e.realX, y: e.realY } } 
           }),
           mergeMap(start => mousemove_1$.pipe(
             map(e => convertClientToReal(canvasRef.value, selected.value, e)),
             map(end => ({ start: start, end: end })),
             tap(e => { 
-              stalkerRef.value.show({unModified : `${e.end.realX} ${e.end.realY}`})
+              stalkerRef.value.show({unModified : `(${e.end.realX},${e.end.realY})`})
               selected.value = { ...selected.value, endPos: { x: e.end.realX, y: e.end.realY} }
             }),
             takeUntil(mouseup$),
@@ -352,15 +364,7 @@
         newWindowReq$.subscribe(async (e) => {
           console.log('newWindowReq', e);
           if(e.detail.type === "file") {
-            switch(e.detail.payload.split('.').pop().toLowerCase()){
-              case 'hraw':
-              case 'zip':
-                path.value = { path : e.detail.payload, script : false };
-                break;
-              default:
-                path.value = { path : e.detail.payload, script : true };
-                break;
-            }
+            path.value = { path : e.detail.payload, script : false };
           }
         });
 
@@ -428,7 +432,7 @@
         })
         const labelStyle = ref({
           position: "fixed",pointerEvents: "none",userSelect: "none",
-          top: "10px",left: "10px",width: "100px",height: "40px",
+          top: "10px",left: "10px",width: "100px",height: "45px",
           overflow: "hidden",
           fontSize:" x-small",whiteSpace: "pre-line", zIndex: "98"
         })

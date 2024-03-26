@@ -1,26 +1,25 @@
 [package]
 name = "huazhi"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 wry = "0.34.2"
-serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.114"
-serde_yaml = "0.9.32"
-windows = { version = "*", features = ["Win32_System_Console",] }
-num = "*"
 
-anyhow = "*"
-thiserror = "*"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
 colored = "*"
 indoc = "*"
 include_dir = "0.7.3"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = { workspace = true }
+
+windows = { version = "*", features = ["Win32_System_Console",] }
+num = "*"
 
 tempfile = "3.5.0"
-image = "0.24.9"
 tokio = { version = "1.36.0", features = ["full"] }
 
 # mmf
@@ -28,3 +27,5 @@ winapi = { version = "*", features = [ "memoryapi", "winnt", "errhandlingapi", "
 
 once_cell = "*"
 urlencoding = "2.1.3"
+
+image = "0.24.9"      # use icon

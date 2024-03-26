@@ -14,6 +14,8 @@ use crate::get_args;
 use huazhi::memorymappedfile::*;
 use hraw::{buffer::FromHraw, *};
 
+use hraw::{read_png_head, FromPng};
+
 #[derive(Serialize, Deserialize, Default, Debug)]
 pub struct Message{
   #[serde(rename = "type")]
@@ -48,6 +50,24 @@ pub async fn async_custom_protocol_data(request: huazhi::wry::http::Request<Vec<
         .body(serde_json::to_string(&dst).unwrap().as_bytes().to_vec())
         .unwrap()
     },
+    Some("read_file_png") => {
+
+      let path = value["payload"]["path"].as_str().unwrap_or("");
+      let (width, height) = read_png_head(path);
+
+      crate::mmf_init(width, height);
+
+      let mmf_path = get_args().lock().unwrap().memorymapped.to_owned();
+      let mut mmf = MemoryMappedFileCreator::open(mmf_path.as_str()).unwrap();
+      mmf.to_accessor().to_mut_slice::<i32>().from_png(path);
+
+      let dst = json!({ "status" : true });
+
+      huazhi::wry::http::Response::builder()
+        .header(CONTENT_TYPE, "application/json")
+        .body(serde_json::to_string(&dst).unwrap().as_bytes().to_vec())
+        .unwrap()
+    },
     Some("refresh") => {
       let shift = value["payload"]["shift"].as_i64().unwrap_or(0) as i32;
       let color = value["payload"]["color"].as_i64().unwrap_or(0) as i32;
@@ -59,6 +79,7 @@ pub async fn async_custom_protocol_data(request: huazhi::wry::http::Request<Vec<
 
       let mut mmf = MemoryMappedFileCreator::open(mmf_path.as_str()).unwrap();
       let acc = mmf.to_accessor();
+   
       huazhi::wry::http::Response::builder()
         .header(CONTENT_TYPE, "image/png")
         .body(hraw::processing::slice_to_png(acc.to_slice::<i32>(), width, height, shift, color))

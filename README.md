@@ -50,4 +50,27 @@ wuzei.exe -s index.html
 
 [*] command : send from namedpipe or prompt-dialog
 
+**color**
 
+| num | note                             |
+| :-- | :--                              |
+| -1  | RGB (32bit RGBA data)            |
+|  0  | Mono (32bit signed integer data) |
+|  1  | debayer (GRBG)                   | 
+|  2  | debayer (RGGB)                   |
+|  3  | debayer (BGGR)                   |
+|  4  | debayer (GBRG)                   |
+|  5  | mono bayer (Left-Top)            |
+|  6  | mono bayer (Right-Top)           |
+|  7  | mono bayer (Left-Bottom)         |
+|  8  | mono bayer (Right-Bottom)        |
+
+**mouse stalker**
+
+```
+ (xx,xx)     <- coords ( x, y )
+ 00000       <- pixel dec val : 32bit signed integer
+ 0xAABBCCDD  <- pixel hex val
+    ↑ ↑ ↑ ↑
+    R G B A
+```
