@@ -1,8 +1,8 @@
-## 0.1.2 (2024-03-xx)
+## 0.1.2 (2024-03-27)
 - change : namedpipe logic
 - fix : stalker GUI
 - fix : d&d script logic
-- fix : err of nalgebra mat init (hraw)
+- fix : nalgebra mat init (hraw)
 - fix : change matrix calc from i32 to f64 for overflow (hraw)
 - add : view for bmp/png
 - add : history
