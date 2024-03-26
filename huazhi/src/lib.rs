@@ -204,21 +204,22 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
     let path = pipename.to_owned();
     tokio::spawn(async move {
       loop {
-        match namedpipe::pipe(path.as_str()).await {
-          Ok(namedpipe::ReturnEnum::Ok(n)) => {
+        match namedpipe::pipe_validate(path.as_str(), |res| { 
+          if serde_json::from_str::<serde_json::Value>(res).is_ok() { Some(res) } else { None }
+        }).await {
+          Ok(n) => {
             println!("{} {}","pipe received".green(), n);
             if proxy.send_event(UserEvent::NewEvent("namedPipe".to_string(), format!("{n}"))).is_err() { 
               // anyhow::bail!("proxy err") 
-              // println!("");
               println!("{} {:?}", "error pipe".red(), "proxy");
               break;
             }
           },
-          Ok(namedpipe::ReturnEnum::Continue) => { continue; },
+          // Ok(namedpipe::ReturnEnum::Continue) => { continue; },
           Err(e) => { 
             // anyhow::bail!(e)
             println!("{} {:?}", "error pipe".red(), e);
-            break;
+            continue;
           }
         }
       }

@@ -109,8 +109,6 @@ pub fn mmf_init(width:usize, height:usize){
 async fn main() -> anyhow::Result<()> {
   let args = get_args().lock().unwrap().clone();
 
-
-
   /* setting */
   println!("{}", "set window".blue());
   let event_loop = EventLoopBuilder::<huazhi::UserEvent>::with_user_event().build();

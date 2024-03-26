@@ -1,20 +1,78 @@
+#![allow(deprecated)]
+
 use tokio::net::windows::named_pipe::{ServerOptions, NamedPipeServer};
 use tokio::io::Interest;
 use anyhow::bail;
 
+pub async fn pipe(pipename:&str) -> anyhow::Result<String> {
+  pipe_validate(pipename, |res| { Some(&res) }).await
+}
+
+pub async fn pipe_validate<F: FnOnce(&str)-> Option<&str>>(pipename:&str, func:F) -> anyhow::Result<String> {
+  let server : NamedPipeServer = ServerOptions::new().create(format!(r##"\\.\pipe\{pipename}"##).as_str())?;
+  let _ = server.connect().await?;
+  let res = pipe_read(&server).await?;
+  match func(&res) {
+    Some(_) => pipe_write(&server, "Ok").await?,
+    None => pipe_write(&server, "Err").await?
+  }
+  let _ = pipe_read(&server).await?;
+  server.disconnect()?;
+  Ok(res)
+}
+
+async fn pipe_read(server: &NamedPipeServer) -> anyhow::Result<String> {
+  let mut buf = vec![0; 1024];  
+  loop {
+    let _ready = server.ready(Interest::READABLE).await?;
+    let dst = match server.try_read(&mut buf) {
+      Ok(n) => { String::from_utf8_lossy(&buf[0..n]).into_owned().trim().to_string() }
+      Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => { continue; }
+      Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => { bail!(e) }
+      Err(e) => bail!(e)
+    };
+    return Ok(dst);
+  }
+}
+
+async fn pipe_write(server: &NamedPipeServer, val:&str) -> anyhow::Result<()> {
+  loop {
+    let _ready = server.ready(Interest::WRITABLE).await?;
+    match server.try_write(format!("{val}\r\n").as_bytes()) {
+      Ok(_) => { /* println!("write {} bytes", n);*/ }
+      Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => { continue; }
+      Err(e) => bail!(e)
+    }
+    return Ok(());
+  }
+}
+
+/*
+is_readable == false
+  パイプが切断されてるか : ErrorKind::WouldBlock
+  読むデータがないか     : ErrorKind::BrokenPipe
+*/
+#[deprecated]
 pub enum ReturnEnum {
   Ok(String),
+  // Err(String),
   Continue,
 }
 
-pub async fn pipe(pipename:&str) -> anyhow::Result<ReturnEnum> {
+#[deprecated]
+pub async fn old_pipe(pipename:&str) -> anyhow::Result<ReturnEnum> {
+  old_pipe_validate(pipename, |res| { Some(&res) }).await
+}
+
+#[deprecated]
+pub async fn old_pipe_validate<F: FnOnce(&str)-> Option<&str> >(pipename:&str, func:F) -> anyhow::Result<ReturnEnum> {
   let server : NamedPipeServer = ServerOptions::new().create(format!(r##"\\.\pipe\{pipename}"##).as_str())?;
   let _connected = server.connect().await?;
   println!("connect");
   let ready = server.ready(Interest::READABLE).await?;
   let mut dst = String::new();
   let mut buf = vec![0; 1024];
-  if ready.is_readable() {
+  if ready.is_readable() { 
     dst = match server.try_read(&mut buf) {
       Ok(n) => { String::from_utf8_lossy(&buf[0..n]).into_owned().trim().to_string() }
       Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => { return Ok(ReturnEnum::Continue); }
@@ -22,8 +80,9 @@ pub async fn pipe(pipename:&str) -> anyhow::Result<ReturnEnum> {
     }
   }
   let ready = server.ready(Interest::WRITABLE).await?;
+  let res = func(&dst);
   if ready.is_writable() {
-    match server.try_write(b"Ok\r\n") {
+    match server.try_write(if res.is_some() { b"Ok\r\n" } else { b"Err\r\n" } ) {
       Ok(_) => { /* println!("write {} bytes", n);*/ }
       Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => { return Ok(ReturnEnum::Continue); }
       Err(e) => bail!(e)
