@@ -36,28 +36,50 @@ String.prototype.overwrite = function (src, index) {
 };
 
 /* helper methods */
+function splitcom(src) {
+  if(src){
+    // A: const result = src.match(/"([^"]*?)"|'([^']*?)'|[^\s"']+/g);
+    // B: const result = src.split(/(?:"([^"]+)"|'([^']*?)'|([^\s"']+)) ?/).filter(e => e)
+    return Array.from(src.matchAll(/"([^"]*?)"|'([^']*?)'|([^\s"']+)|([\s]+)/g)).map((n, index, arr) => {
+      return { full:n[0], captured: n[1] || n[2] || n[3], index: n.index };
+    });
+  }else{
+    return []
+  }
+}
+
 function commandlineParser(src){
-  // const regex = /"([^"]*?)"|'([^']*?)'|[^\s"']+/g;
-  // const result = src.match(regex);
-  const result = src.split(/(?:"([^"]+)"|'([^']*?)'|([^\s"']+)) ?/).filter(e => e)
-  const len = result ? result.length : 0;
+  const matches = splitcom(src);
   const e = {
-    type: result ? result[0] : null,
-    payload: result ? result.slice(1) : null
+    type: matches.filter(n=> n.captured)[0]?.captured,
+    payload: matches.filter(n=> n.captured).slice(1).map(n=>n.captured)
   };
   return e;
 }
 
 function syntaxHighlighting(src){
-  const regex = /"([^"]*?)"|'([^']*?)'|[^\s"']+/g;
-  const result = src.match(regex);
-  if(result){
-    return src.replace(result[0], `\x1B[38;5;226m${result[0]}\x1B[0m`)
+  const matches = splitcom(src);
+  // if(matches[0]?.captured){
+  //   return src.replace(matches[0].captured, `\x1B[38;5;226m${matches[0].captured}\x1B[0m`)
+  // }
+  let dst = "";
+  let flag = false;
+  for (const match of matches) {
+    if(!flag && match.full.trim() === ""){
+      dst += match.full
+      continue;
+    }else if(!flag && match.full.trim() !== ""){
+      flag = true
+      dst += `\x1B[38;5;226m${match.full}\x1B[0m`
+      continue;
+    }else if(match.full.startsWith('-')){
+      dst += `\x1B[38;5;248m${match.full}\x1B[0m`
+    }else{
+      dst += match.full
+    }
   }
-  return src;
+  return dst;
 }
-
-
 
 function onKeySendWithIpc(e){
     // isTrustedしか流れないのでobject再構成
