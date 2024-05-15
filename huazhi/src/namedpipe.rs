@@ -1,14 +1,61 @@
 #![allow(deprecated)]
 
+use colored::*;
 use tokio::net::windows::named_pipe::{ServerOptions, NamedPipeServer};
 use tokio::io::Interest;
 use anyhow::bail;
+
+/* namedpipe event */
+
+pub fn pipe_builder<F>(pipename:String, proxy: tao::event_loop::EventLoopProxy<super::event_handler::UserEvent>, callback:F) -> anyhow::Result<()> 
+  where F: Fn(&str) -> Option<String> + Send + Copy + 'static,
+{
+  println!("{} {}", "resist pipe".blue(), pipename);
+  // let proxy = event_loop.create_proxy();
+  // let path = args.namedpipe.as_str().to_owned();
+
+  /* std::thread::spawn(move */
+  tokio::spawn(async move { 
+    use super::event_handler::*;
+    loop {
+      match pipe_validate(pipename.as_str(), callback).await {
+        Ok(n) => {
+          println!("{} {}","pipe received".green(), n);
+          let e = UserEvent::NewEvent(WebviewEvent::NamedPipe, format!("{n}"));
+          if proxy.send_event(e).is_err() { 
+            println!("{} {:?}", "error pipe".red(), "proxy");
+            break;
+          }
+        },
+        Err(e) => { 
+          println!("{} {:?}", "pipe error".red(), e);
+          continue;
+        }
+      }
+    }
+    println!("{}", "exit pipe".blue())
+  });
+  Ok(())
+}
+// #[allow(dead_code)]
+// pub fn back_ground_worker(proxy:&wry::application::event_loop::EventLoopProxy<super::UserEvent>) {
+//   loop {
+//     let now = std::time::SystemTime::now()
+//       .duration_since(std::time::SystemTime::UNIX_EPOCH)
+//       .unwrap()
+//       .as_millis();
+//     if proxy.send_event(super::UserEvent::Message(format!("{now}"))).is_err() { break; }
+//     std::thread::sleep(std::time::Duration::from_secs(1));
+//   }
+// }
+
+/* namedpipe method */
 
 pub async fn pipe(pipename:&str) -> anyhow::Result<String> {
   pipe_validate(pipename, |res| { Some(res.to_owned()) }).await
 }
 
-pub async fn pipe_validate<F: Fn(&str)-> Option<String>>(pipename:&str, func:F) -> anyhow::Result<String> {
+pub async fn pipe_validate<F: Fn(&str) -> Option<String>>(pipename:&str, func:F) -> anyhow::Result<String> {
   let server : NamedPipeServer = ServerOptions::new().create(format!(r##"\\.\pipe\{pipename}"##).as_str())?;
   let _ = server.connect().await?;
   let res = pipe_read(&server).await?;
@@ -111,23 +158,3 @@ pub async fn old_pipe_validate<F: FnOnce(&str)-> Option<&str> >(pipename:&str, f
 }
 
 
-/* 別スレッド
-  std::thread::spawn(move ||{})
-  tokio::spawn(async move { back_ground_worker(&proxy_3); });
-  let proxy = event_loop.create_proxy();
-  tokio::spawn(async move { 
-    back_ground_worker_pipe(&proxy, args.namedpipe).await.unwrap();
-  });
-*/
-
-#[allow(dead_code)]
-pub fn back_ground_worker(proxy:&wry::application::event_loop::EventLoopProxy<super::UserEvent>) {
-  loop {
-    let now = std::time::SystemTime::now()
-      .duration_since(std::time::SystemTime::UNIX_EPOCH)
-      .unwrap()
-      .as_millis();
-    if proxy.send_event(super::UserEvent::Message(format!("{now}"))).is_err() { break; }
-    std::thread::sleep(std::time::Duration::from_secs(1));
-  }
-}

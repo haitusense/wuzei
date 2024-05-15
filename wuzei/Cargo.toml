@@ -7,14 +7,15 @@ edition = "2021"
 
 [dependencies]
 huazhi = { workspace = true }
-# hraw = { git = "https://github.com/haitusense/hraw/", features=[] }
-hraw = { path = "../../hraw" }
+hraw = { workspace = true }
 
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 colored = "2.1.0"
 indoc = "2.0.5"
 include_dir = "0.7.3"
+strum = { version = "0.26", features = ["derive"] }
+strum_macros = "0.26"
 
 clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = "1.36.0" }

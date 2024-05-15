@@ -1,19 +1,30 @@
 pub extern crate wry;
+pub extern crate tao;
 pub mod namedpipe;
 pub mod memorymappedfile;
 pub mod process;
-mod test;
+
+pub mod event_handler;
+pub mod custom_protocol;
+use event_handler::UserEvent;
+
+// mod test;
 
 use colored::*;
 use anyhow::Context as _;
-use serde::{Serialize, Deserialize};
-use include_dir::Dir;
 use serde_json::json;
+
+// use tao::{
+  // event::{Event, StartCause, WindowEvent},
+  // event_loop::{ControlFlow, /* EventLoop */ EventLoopBuilder},
+  // window::WindowBuilder,
+// };
 use wry::{
-  application::event_loop::EventLoop,
-  webview::WebViewBuilder,
-  http::{header::CONTENT_TYPE, StatusCode},
+  WebViewBuilder,
+  http::StatusCode,
 };
+
+use crate::event_handler::WebviewEvent;
 
 #[macro_export]
 macro_rules! debug {
@@ -40,19 +51,19 @@ pub mod console {
 }
 
 pub trait HuazhiDir {
-  fn get_icon(&self, key: &str) -> Option<wry::application::window::Icon>;
+  fn get_icon(&self, key: &str) -> Option<tao::window::Icon>;
   fn get_contents(&self, keys:Vec<String>) -> impl Iterator<Item=(String, &str)>;
   fn get_contents_from_json(&self, json:&str) -> impl Iterator<Item=(String, &str)>;
 }
 
 impl<'a> HuazhiDir for include_dir::Dir<'a> {
-  fn get_icon(&self, key: &str) -> Option<wry::application::window::Icon> {
+  fn get_icon(&self, key: &str) -> Option<tao::window::Icon> {
     // include_bytes!("image/icon.png")
     match image::load_from_memory(self.get_file(key)?.contents()) {
       Ok(rgba) => {
         let width = rgba.width();
         let height = rgba.height();
-        wry::application::window::Icon::from_rgba(rgba.into_bytes(), width, height).ok()
+        tao::window::Icon::from_rgba(rgba.into_bytes(), width, height).ok()
       },
       Err(e) => {
         println!("{e:?}");
@@ -74,21 +85,14 @@ impl<'a> HuazhiDir for include_dir::Dir<'a> {
 }
 
 
-#[derive(Serialize, Deserialize, Default, Debug)]
-pub struct Message{
-  #[serde(rename = "type")]
-  pub type_name: String,
-  pub payload: serde_json::Value
-}
+// #[derive(Serialize, Deserialize, Default, Debug)]
+// pub struct Message{
+//   #[serde(rename = "type")]
+//   pub type_name: String,
+//   pub payload: serde_json::Value
+// }
 
-#[derive(Debug)]
-pub enum UserEvent {
-  Message(String),
-  SubProcess(serde_json::Value),
-  SubProcess2(serde_json::Value),
-  Py(serde_json::Value),
-  NewEvent(String, String)
-}
+
 
 pub trait HuazhiBuilder : Sized {
 
@@ -96,9 +100,9 @@ pub trait HuazhiBuilder : Sized {
 
   fn resist_navigate(self, name:&str, working_dir:Option<String>, url:Option<String>) -> anyhow::Result<Self>;
 
-  fn resist_handler(self, event_loop:&EventLoop<UserEvent>) -> Self;
+  fn resist_handler(self, event_loop:&tao::event_loop::EventLoop<UserEvent>) -> Self;
 
-  fn resist_pipe_handler(self, event_loop:&EventLoop<UserEvent>, pipename:&str) -> Self;
+  fn resist_pipe_handler(self, event_loop:&tao::event_loop::EventLoop<UserEvent>, pipename:&str) -> Self;
 
   fn resist_async_protocol(self) -> Self;
 
@@ -144,7 +148,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
         // self.with_html(content)
       }
     };
-    Ok(dst.context("failed navigate")?)
+    Ok(dst)
   }
   
   /* 
@@ -158,7 +162,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
           false
         })
   */
-  fn resist_handler(self, event_loop:&EventLoop<UserEvent>) -> Self {
+  fn resist_handler(self, event_loop:&tao::event_loop::EventLoop<UserEvent>) -> Self {
     println!("{} {}", "resist".blue(), "handler");
     let proxy_req = event_loop.create_proxy();
     let proxy_ipc = event_loop.create_proxy();
@@ -181,28 +185,13 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
           },
           _=> json!({"type" : "unknown", "payload": event })
         }).unwrap();
-        let _ = proxy_req.send_event(UserEvent::NewEvent("newWindowReq".to_string(), dst)).unwrap();
+        let _ = proxy_req.send_event(UserEvent::NewEvent(WebviewEvent::NewWindowReq, dst)).unwrap();
         false // 後に続く動作を止める
       })
-      .with_ipc_handler(move |_window, arg| {
-        let src: Message = match serde_json::from_str::<Message>(&arg) {
-          Ok(n) => n,
-          Err(e) => {
-            println!("err {e}");
-            Message::default()
-          }
-        };
-        match src.type_name.as_str() {
-          "message" => { let _ = proxy_ipc.send_event(UserEvent::Message(format!("{:?}",src.payload))).unwrap(); },
-          "process" => { let _ = proxy_ipc.send_event(UserEvent::SubProcess(src.payload)).unwrap(); },
-          "process2" => { let _ = proxy_ipc.send_event(UserEvent::SubProcess2(src.payload)).unwrap(); },
-          "py" => { let _ = proxy_ipc.send_event(UserEvent::Py(src.payload)).unwrap(); },
-          _ => println!("{src:?}")
-        };
-      })
+      .with_ipc_handler(move |arg: wry::http::Request<String>| { event_handler::ipc_handler(arg, &proxy_ipc) })
   }
   
-  fn resist_pipe_handler(self, event_loop:&EventLoop<UserEvent>, pipename:&str) -> Self {
+  fn resist_pipe_handler(self, event_loop:&tao::event_loop::EventLoop<UserEvent>, pipename:&str) -> Self {
     println!("{} {}", "resist pipe".blue(), pipename);
     let proxy = event_loop.create_proxy();
     let path = pipename.to_owned();
@@ -213,7 +202,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
         }).await {
           Ok(n) => {
             println!("{} {}","pipe received".green(), n);
-            if proxy.send_event(UserEvent::NewEvent("namedPipe".to_string(), format!("{n}"))).is_err() { 
+            if proxy.send_event(UserEvent::NewEvent(WebviewEvent::NamedPipe, format!("{n}"))).is_err() { 
               // anyhow::bail!("proxy err") 
               println!("{} {:?}", "error pipe".red(), "proxy");
               break;
@@ -266,67 +255,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
 }
 
 
-pub async fn async_custom_protocol_resource(resource: &Dir<'static>, url: &str) -> wry::http::Response<Vec<u8>> {
-  println!("custom protocol resource path {:?}", url);
-  let content = match resource.get_file(url){
-    Some(n) => n.contents_utf8().unwrap(),
-    None => {
-      println!("{} {}", "get_file err".red(), url);
-      ""
-    }
-  };
-  let header = match url {
-    n if n.ends_with(".js") => "text/javascript",
-    n if n.ends_with(".html") => "text/html",
-    n if n.ends_with(".css") => "text/css",
-    _=> "text/plain"
-  };
-  
-  wry::http::Response::builder()
-    .header(CONTENT_TYPE, header)
-    .body(content.to_string().as_bytes().to_vec())
-    .unwrap()
-}
 
-pub async fn async_custom_protocol_local(url: &str) -> wry::http::Response<Vec<u8>> {
-  println!("custom protocol local path {:?}", url);
-  let content = std::fs::read_to_string(&url).expect("could not read file");
-  wry::http::Response::builder()
-    .header(CONTENT_TYPE, "text/html")
-    .body(content.as_bytes().to_vec())
-    .unwrap()
-}
-
-pub async fn async_custom_protocol_err(url: &str) -> wry::http::Response<Vec<u8>> {
-  println!("custom protocol {:?} {:?}", StatusCode::NOT_FOUND, url);
-  wry::http::Response::builder()
-    .status(StatusCode::NOT_FOUND)
-    .body(url.as_bytes().to_vec())
-    .unwrap()
-}
-
-
-pub trait HuazhiRequestBuilder {
-  fn respond_text(self, src: &str);
-  fn respond_vec(self, src: Vec<u8>);
-}
-
-impl HuazhiRequestBuilder for wry::webview::RequestAsyncResponder {
-  fn respond_text(self, src: &str) {
-    let res = wry::http::Response::builder()
-      .header(CONTENT_TYPE, "text/plain")
-      .body(format!("{:?}", src).as_bytes().to_vec())
-      .unwrap();
-    self.respond(res);
-  }
-  fn respond_vec(self, src: Vec<u8>) {
-    let res = wry::http::Response::builder()
-      .header(CONTENT_TYPE, "application/octet-stream")
-      .body(format!("{:?}", src).as_bytes().to_vec())
-      .unwrap();
-    self.respond(res);
-  }
-}
 
 
 // "/async" => {

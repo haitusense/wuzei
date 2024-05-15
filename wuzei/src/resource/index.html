@@ -1,513 +1,317 @@
+<!doctype html>
 <html>
   <head>
-    <meta charset="UTF-8">
-    <script src="http://wuzei.localhost/resource/vue@3.4.12/vue.global.prod.js"></script>
-    <script src="http://wuzei.localhost/resource/rxjs@7.8.1/rxjs.umd.js"></script>
-    <script src="http://wuzei.localhost/resource/@vueuse/rxjs@10.9.0/index.iife.js"></script>
+    <!-- https://cdn.jsdelivr.net/npm -->
+    <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
+    <script src="./rxjs@7.8.1/dist/bundles/rxjs.umd.min.js"></script>
+    <script src="./@vueuse/rxjs@10.9.0/index.iife.js"></script>
+
+    <link href="./splitpanes@3.1.5/dist/splitpanes.min.css" rel="stylesheet">
+    <script src="./splitpanes@3.1.5/dist/splitpanes.umd.min.js"></script>
+
+    <link href="./@xterm/xterm@5.5.0/css/xterm.min.css" rel="stylesheet">
+    <script src="./@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+
+    <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+
     <style>
-      .canvasClass {
-        position: absolute;
-        pointer-events: none;
-        image-rendering:pixelated;
-        left: 10px;
-        top: 10px;
-      }
-
-      .contextmenu {
-        position: fixed;
-        z-index: 99;
-        background: #fff;
-        color: #555;
-        font-size: 11px;
-        user-select: none;
-        box-shadow: 2px 2px 2px 0 #8f9091;
-        border: 1px solid #c6c6c6;
-        padding: 0;
-        padding-top: 4px;
-        padding-bottom: 4px;
-        margin: 0;
-        outline: 0;
-        display: none;
-      }
-      .contextmenu div {
-        box-sizing: border-box;
-        display: block;
-        padding: 8px 8px 8px 28px;
-        width: 250px;
-        position: relative;
-        cursor: default;
-        font-size: 11px;
-        font-family: sans-serif;
-      }
-      .contextmenu div:hover {
-        background: #ebebeb;
-      }
-      .contextmenu hr {
-        border: 1px solid #e9e9e9;
-        border-bottom: 0;
-        margin-top: 5px;
-        margin-bottom: 5px;
-      }
-
+      html, body { height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
+      #app{ height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
     </style>
+    <link href="./component/canvas-ex.css" rel="stylesheet">
   </head>
   <body>
+    <!-------- view -------->
     <div id ="app">
-      <!-- canvas -->
-      <div id="canvas" ref="divRef"
-        style="position: relative; transform-origin: top left; background-color: gray; overflow: hidden;" 
-        :style="{ transform: 'scale(' + cnvParams.zoomfactor + ')', width: cnvParams.width+20, height: cnvParams.height+20 }" >
-        <canvas class="canvasClass" ref="canvasRef" style="background-color: darkgrey;"></canvas>
-        <canvas class="canvasClass" ref="selectRef" :width="cnvParams.width" :height="cnvParams.height"></canvas>
-      </div>
-
+      <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
+        <!-- canvas -->
+        <vue-pane style=" overflow:scroll; position: relative; background-color: gray;">
+          <canvas-ex 
+            :margin="20"
+            ref = "canvasRef"
+            @on-context="onContextmenu"
+            @on-mousemove="onMousemove"
+            ></canvas-ex>
+        </vue-pane>
+        <vue-pane style="width:100%; background-color: black;" v-if="termShow">
+          <!-- terminal -->
+          <my-terminal ref="termRef" 
+            :on-async-key="beforeOnKey"
+            @on-change="onChange" 
+            @on-submit="onSubmit" :on-async-submit="onAsyncSubmit"
+          ></terminal>
+        </vue-pane>
+      </vue-split-pane>
       <!-- context-menu / mouse-stalker -->
-      <context-menu ref="contextRef" v-on:callback="clickContextMenu($event)"></context-menu>
-      <mouse-stalker ref="stalkerRef" ></mouse-stalker>
+      <context-menu ref="contextRef" :items="sharedObject" v-on:on-click="clickContextMenu"></context-menu>
+      <mouse-stalker target="canvas" ref="stalkerRef" ></mouse-stalker>
     </div>
-  </body>
-  <script type="module">
-    console.log("index.html")
-    import { convertClientToReal, convertSelectedToRect } from "./test.js"
+    <!-------- logic -------->
+    <script type="module">
+      import { sleep, indoc, asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel } from "./js/lib.js"
 
-    const { createApp, onMounted, nextTick, ref } = window.Vue;
-    const { /* from */ /* fromEvent */ of, merge, partition,
-      filter, first, delay, map, takeUntil, debounceTime, scan,
-      bufferToggle, switchMap, mergeMap,  
-      share, tap
-    } = window.rxjs;
-    const { from, fromEvent } = window.VueUse;
+      await asyncCheckWebview();// undefined
 
-    const app = createApp({
-      setup() {
-        const busy = ref(true);
-        const [divRef, canvasRef] = [ref(null), ref(null)];
-        const [selectRef, selected] = [ref(null), ref({ startPos:{ x: 0, y: 0 }, endPos:{ x: 0, y: 0 } })]; // real pos
-        const [contextRef, stalkerRef] = [ref(null), ref(null)];
+      import { wtermComponent, Wterm } from "./component/wterm.js"
+      import { canvasEx } from "./component/canvas-ex.js"
+      import { contextmenu } from "./component/context.js"
+      import { stalker } from "./component/stalker.js"
 
-        const cnvParams = ref({ width:320, height:240, zoom:0, zoomfactor:1, rendering : false });
-        const rawParams = ref({ bitshift:0, color:0 })
-        const path = ref({path:"", script:false})
 
-        /******** action ********/
-        const action = async (e) => {
-          console.log(e);
-          switch(e.type){
-            case "resize":
-              let width = e.payload[0];
-              let height = e.payload[1];
-              
-              let res = await Wuzei.fetchJson({ type : "resize", payload : { 
-                width: width,
-                height : height
-              } });
-              rawParams.value = {...rawParams.value}
-              break;
-            case "alert":
-              alert(e.payload[0])
-              break;
-            case "confirm":
-              let result = confirm(e.payload[0])
-              break;
-            case "select":
-              selected.value = { startPos:{ x: Number(e.payload[0]), y: Number(e.payload[1])}, endPos:{ x: Number(e.payload[2]), y: Number(e.payload[3])} }
-              break;
-            case "zoom":
-              cnvParams.value = { ...cnvParams.value, zoom: Number(e.payload[0]) }
-              break;
-            case "bitshift":
-              rawParams.value = { ...rawParams.value, bitshift: Number(e.payload[0]) }
-              break;
-            default:
-              break;
-          }
-        }
+      const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
+      const { /* from */ /* fromEvent */ of, merge, partition,
+        filter, first, delay, map, takeUntil, debounceTime, scan,
+        bufferToggle, switchMap, mergeMap,  
+        share, tap
+      } = window.rxjs;
+      const { from, fromEvent } = window.VueUse;
 
-        /******** view ********/
-        const isBusy$ = from(busy);
-        isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
+      const app = createApp({
+        setup() {
+          const [termShow, termRef] = [ref(false), ref(null)];
+          const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
+          
+          /******** terminal ********/
 
-        /* param changed */
-        merge(from(rawParams), from(cnvParams), fromEvent(window, 'resize')).subscribe(e => {
-          stalkerRef.value.show({shiftKey : `bitshift : ${rawParams.value.bitshift}`})
-          stalkerRef.value.show({altKey : `zoom : ${cnvParams.value.zoom} ${window.devicePixelRatio.toFixed(2)} ${(window.outerWidth / window.innerWidth).toFixed(2)}`})
-          stalkerRef.value.show({ctrlKey :`ctrl ${window.devicePixelRatio.toFixed(2)} ${(window.outerWidth / window.innerWidth).toFixed(2)}`})
-        });
+          const beforeOnKey = async (e) => { return true; }
+          const onChange = (e)=> { /* console.log(e) */ }
 
-        from(cnvParams).subscribe((e) => { 
-          e.zoomfactor = 1.2 ** e.zoom;
-          canvasRef.value.style.imageRendering = e.rendering ? "pixelated" : "auto";
-        });
+          // どちらを使うか。
+          const onAsyncSubmit = async (e) => { return false; /* true : promptの自動表示 */ }
+          const onSubmit = async (e)=> {
+            console.log(e)
+            switch(e.type){
+              case 'getpixel':{
+                const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
+                termRef.value.write(`${JSON.stringify(dst)}`);
+              } break;
+              case 'echo':{
+                termRef.value.write(`${e.payload.join(' ')}`);
+              } break;
 
-        from(selected).subscribe((e) => {
-          const ctx = selectRef.value.getContext("2d");
-          ctx.beginPath();
-          ctx.clearRect(0, 0, selectRef.value.width, selectRef.value.height);
-          const {left, top, width, height} = convertSelectedToRect(e);
-          console.log(left, top, width, height)
-          if(width > 0 && height > 0){
-            ctx.fillStyle = "rgb(0, 0, 255, 0.2)";
-            ctx.fillRect(left, top, width, height);
-            console.log(left, top, width, height)
-            ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
-            ctx.lineWidth = 1;
-            ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
-            console.log(left + 0.5, top + 0.5, width - 1, height - 1)
-          }
-          ctx.closePath();
-        });
+              case 'sleep-js':{
+                for (let step = 0; step < 5; step++) {
+                  if(termRef.value){
+                    termRef.value.write(`${step}`);
+                  }else{
+                    console.log(step)
+                  }
+                  await sleep(1000);
+                } 
+              } break;
+              case 'sleep-event':{
+                post("sleep", { a : 1, b :2 });
+              } return; // callbackで受けるのでtermRef.value.prompt()を投げない
+              case 'sleep-async':{
+                const dst = await asyncPostJson("sleep", ["1"] )
+                termRef.value.write(`${JSON.stringify(dst)}`);
+              } break;
+          
+              case 'js-eval':{
+                let dst = eval(e.payload.join(' '))
+                if(termRef.value){
+                  termRef.value.write(`${e.payload.join(' ')} = ${dst}`);
+                }else{
+                  console.log(dst)
+                } 
+              } break;
+              case 'py-eval':{
+                const dst = await asyncPostJson("py1", e.payload.join(' ') )
+                termRef.value.write(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
+              } break;
+              case 'py-test':{
+                const dst = await asyncPostJson("py", { 
+                  code: indoc(`
+                    def main(args):
+                      print('__name__ :', __name__)
+                      print('args :', args)
+                      print('dst :', Pixel.get(10, 10))
+                      Pixel.set(10, 10, 255)
+                      args["x"] = 10
+                      return args
+                  `), 
+                  entry: "main",
+                  args: JSON.stringify({ x:1, y:2 }) 
+                } );
+                termRef.value.write(`${JSON.stringify(dst)}`);
+              } break;
+              case 'ps':{
+                const dst = await asyncPostJson("ps", e.payload);
+                termRef.value.write(`${dst}`);
+              } break;
+              case 'py':{
+                const code = await asyncGetTxt(`local/${e.payload[0]}`)
+                termRef.value.write(`========code========\r\n`);
+                termRef.value.write(`${code}\r\n`);
+                termRef.value.write(`========result========\r\n`);
+                const dst = await asyncPostJson("py", { 
+                  code: code,
+                  entry: "main",
+                  args: JSON.stringify(JSON.parse(e.payload[1]))
+                } );
+                termRef.value.write(`${JSON.stringify(dst)}`);
+              } break;
 
-        from(rawParams).subscribe(async (e) => { // scan((acc, curr) => ({ old: acc, new: curr}), null))
-          busy.value = true;
-          const dst = await Wuzei.fetchPng(canvasRef.value, { type : "refresh", payload : { shift: e.bitshift, color: e.color } });
-          cnvParams.value = { ...cnvParams.value, width:dst.width, height:dst.height }
-          busy.value = false;
-        });
-  
-        from(path).subscribe(async (e) => {
-          busy.value = true;
-          switch(e.path.split('.').pop().toLowerCase()){
-            case 'hraw':
-            case 'zip':
-              {
-                const res = await Wuzei.fetchJson({ type : "read_file", payload : { path: e.path } });
-                console.log("read file", e, res);
-              }
-              break;
-            case 'png':
-            case 'bmp': 
-              {
-                const res = await Wuzei.fetchJson({ type : "read_file_png", payload : { path: e.path } });
-                console.log("read file png", e, res);
-              }
-              break;
-            default:
-              {
-                const json = { path : e.path };
-                const res = await Wuzei.fetchJson({ type: "process", payload : ["dotnet", `script ./script.csx -- '${JSON.stringify(JSON.stringify(json))}'` ] });
-                console.log("read file use script", res);
-              }
-              break;
+              case 'zoom':
+                termRef.value.write(`zoom : ${e.payload}`);
+                canvasRef.value.zoom(e.payload)
+                break;          
+              case 'select':{ } break;
+              case 'bitshift':{ } break;
+              case 'test':{
+                post("unknown", { a : 1, b : 2 });
+              } return; // termRef.value.prompt();を投げない
+              default:
+                break;
+            }
+            termRef.value.prompt(); // 自分でprompt必要
           }
           
-          busy.value = false;
-          rawParams.value = { ...rawParams.value }
-        });
-
-        /******** key event ********/
-        const keydown$ = fromEvent(document, 'keydown').pipe(filter(n => n.repeat === false), share());
-        keydown$.pipe(filter(n => n.key.startsWith('Arrow'))).subscribe( e => {
-          switch(e.key){
-            case 'ArrowUp':
-              rawParams.value = { ...rawParams.value , bitshift: rawParams.value.bitshift + 1 };
-              break;
-            case 'ArrowDown':
-              rawParams.value = { ...rawParams.value , bitshift: rawParams.value.bitshift - 1 };
-              break;
-            case 'ArrowRight':
-              rawParams.value = { ...rawParams.value , color: rawParams.value.color + 1 };
-              break;
-            case 'ArrowLeft':
-              rawParams.value = { ...rawParams.value , color: rawParams.value.color - 1 };
-              break;
-            default:
+          if(window.chrome.webview){
+            const termwrite$ = fromEvent(window.chrome.webview, 'write');
+            termwrite$.subscribe((e) => { termRef.value.write(`${e.detail}`); });
+            const termprompt$ = fromEvent(window.chrome.webview, 'prompt');
+            termprompt$.subscribe(() => { termRef.value.prompt(); });
           }
-          e.preventDefault();
-        });
-        keydown$.pipe(filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )).subscribe(async (e) => {
-          console.log('keydown + shortcut', e)
-        });
-        keydown$.subscribe(async (e) => {
-          console.log('keydown', e)
-          switch(e.key){
-            case '\\':
-              cnvParams.value = { ...cnvParams.value, rendering : !cnvParams.value.rendering};
-              e.preventDefault();
-              break;
-            case '.':
-              const dst = await Wuzei.fetchJson({ type : "get_state" });
-              console.log(dst);
-              e.preventDefault();
-              break;
-            default:
+          
+          /******** canvas ********/
+          const onMousemove = async (e, real)=> { 
+            const dst = await asyncPostPixel({ x: real.x, y:real.y});
+            termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
+            stalkerRef.value.intext({ x:real.x, y:real.y})
+            e.preventDefault()
           }
-        });
-
-        /******** mouse event ********/
-        const mousemove$ = fromEvent(document, 'mousemove').pipe(map(e => convertClientToReal(canvasRef.value, selected.value, e)), share());
-        const mousemove_0$ = mousemove$.pipe(filter(e => e.buttons == 0 && !e.altKey && !e.shiftKey && !e.ctrlKey), share());
-        const mousemove_1$ = mousemove$.pipe(filter(e => e.buttons == 1), share());
-        const mousemove_4$ = mousemove$.pipe(filter(e => e.buttons == 4), share());
-        const mouseup$ = fromEvent(document, 'mouseup');
-
-        /* move in canvas */
-        const [mousemoveInn$, mousemoveOut$] = partition(mousemove_0$, e => e.isInCanvas);
-        mousemoveInn$.pipe(
-          filter(e => e.buttons === 0),
-          tap(e => { stalkerRef.value.show({unModified : `(${e.realX},${e.realY})`}) }),
-          debounceTime(120)
-        ).subscribe(async (e) => {
-          const res = await Wuzei.fetchJson({ type: "get_pixel", payload : { x: e.realX, y : e.realY } });
-          const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
-          stalkerRef.value.show({unModified : `(${res.x},${res.y})\r\n${res.data}\r\n${toHex(res.data)}`})
-        });
-
-        /* move with left click in canvas */
-        const mousedownLeft$ = fromEvent(divRef, 'mousedown').pipe(
-          filter(e=> e.buttons == 1),
-          map(e => convertClientToReal(canvasRef.value, selected.value, e)),
-          tap(e => { 
-            stalkerRef.value.show({unModified : `(${e.realX},${e.realY})`})
-            selected.value = { startPos: { x: e.realX, y: e.realY}, endPos: { x: e.realX, y: e.realY } } 
-          }),
-          mergeMap(start => mousemove_1$.pipe(
-            map(e => convertClientToReal(canvasRef.value, selected.value, e)),
-            map(end => ({ start: start, end: end })),
-            tap(e => { 
-              stalkerRef.value.show({unModified : `(${e.end.realX},${e.end.realY})`})
-              selected.value = { ...selected.value, endPos: { x: e.end.realX, y: e.end.realY} }
-            }),
-            takeUntil(mouseup$),
-          ))
-        );
-        mousedownLeft$.subscribe(e => { /* console.log("drag up", convertSelectedToRect(selected.value)) */ });
-
-        /* right click : contextmenu */
-        fromEvent(divRef, 'contextmenu').subscribe( e => {
-          const dst = convertClientToReal(canvasRef.value, selected.value, e)
-          switch(dst.isInSelected){
-            case true:
-              contextRef.value.show(e.clientX, e.clientY, contextItemsA)
-              break;
-            case false:
-              contextRef.value.show(e.clientX, e.clientY, contextItemsB)
-              break;
-          }
-          e.preventDefault();
-        })
-        // context items
-        const contextItemsA = [
-          { type : 'div', key :'copy_selected', value: 'Copy Selected' },
-          { type : 'div', key :'selected', value: 'Selected Coordinate' },
-          { type : 'hr' }, 
-          { type : 'div', key :'subprocess_csx', value: 'call csx subprocess ' },
-          { type : 'div', key :'subprocess_py', value: 'call py subprocess' },
-          { type : 'div', key :'subprocess_rs', value: 'call rust subprocess' },
-        ]
-        const contextItemsB = [
-          { type : 'div', key :'copy_full', value: 'Copy Full' },
-        ]
-        // context event
-        const clickContextMenu = (e) => {
-          console.log("clickContextMenu", e)
-          const pos = convertSelectedToRect(selected.value);
-          switch(e){
-            case 'copy_selected':
-              Wuzei.copyImageToClipboard(canvasRef.value, pos.left, pos.top, pos.width, pos.height);
-              break;
-            case 'copy_full':
-              Wuzei.copyImageToClipboard(canvasRef.value, 0, 0, canvasRef.value.width, canvasRef.value.height);
-              break;
-            case 'selected':
-              alert(`selected (${pos.left}, ${pos.top}) - (w : ${pos.width}, h : ${pos.height})`);
-              break;
-            case 'subprocess_csx':
-              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["dotnet", `script ./script.csx -- '${JSON.stringify(JSON.stringify(pos))}'` ] }));
-              break;
-            case 'subprocess_py':
-              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["py", `./script.py '${JSON.stringify(JSON.stringify(pos))}'` ] }));
-              break;
-            case 'subprocess_rs':
-              window.ipc.postMessage(JSON.stringify({ type : "process", payload : ["rust-script", `./script.rs '${JSON.stringify(JSON.stringify(pos))}'` ] }));
-              break;
-            default:
-              break;
-          }
-          contextRef.value.close()
-        };
-
-        /*** center click : command prompt ***/
-        const [centerClickShallow$, centerClickDeep$] = partition(
-          fromEvent(divRef, 'mousedown').pipe(
-            filter(e=> e.buttons == 4),
-            switchMap((e) => merge( of(e).pipe(delay(200)), mouseup$).pipe(first()))
-          ), e => e.type === 'mouseup'
-        );
-        centerClickShallow$.subscribe(e=>{ console.log("Center shallow click"); });
-        centerClickDeep$.subscribe(e=>{ 
-          console.log("Center deep click") 
-          let result = prompt('input command').split(/\s+/);
-          action({ type: result[0], payload: result.slice(1) });
-        });
         
-        /*** side click ***/
-        fromEvent(document, 'mousedown').pipe(filter(e => e.buttons == 8 || e.buttons == 16)).subscribe(e => {
-          cnvParams.value = { ...cnvParams.value, rendering : !cnvParams.value.rendering};
-          e.preventDefault();
-        });
-
-        /*** wheel event ***/
-        const mousewheel$ = fromEvent(divRef, 'wheel').pipe(tap(ev => { /* ev.preventDefault() */ } ), share());
-
-        /* shift event : default 横スクロール -> disable */
-        const [wheelShiftIsBusy$, wheelShiftIsNotBusy$] = partition(mousewheel$.pipe(
-          filter(e => e.shiftKey && !e.ctrlKey && !e.altKey),
-          tap(e => e.preventDefault() )
-        ), _ => busy.value);
-        wheelShiftIsNotBusy$.subscribe(e => {
-          if(e.deltaY != 0){
-            rawParams.value = {...rawParams.value, bitshift : rawParams.value.bitshift + (e.deltaY > 0 ? -1 : 1) }
-          }
-        });
-        wheelShiftIsBusy$.pipe(bufferToggle(isBusy$, ()=>isBusy$ ),filter(e => e.length > 0)).subscribe(e => {
-          const dst = e.reduce((acc, curr) => acc + (curr.deltaY > 0 ? -1 :1), rawParams.value.bitshift)
-          rawParams.value = {...rawParams.value, bitshift : dst }
-        });
-
-        /* ctrl : default動作 */
-        mousewheel$.pipe(filter(e=> !e.shiftKey && e.ctrlKey && !e.altKey)).subscribe((e) => { });
-
-        /* alt event */
-        mousewheel$.pipe(filter(e=> !e.shiftKey && !e.ctrlKey && e.altKey)).subscribe((e) => {
-          cnvParams.value = { ...cnvParams.value, zoom : cnvParams.value.zoom + (e.deltaY > 0 ? -1 : 1)};
-          e.preventDefault();
-        });
+          /******** view ********/
+          // const isBusy$ = from(busy);
+          // isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
 
 
-        /******** other event ********/
-        const newWindowReq$ = fromEvent(window.chrome.webview, 'newWindowReq');
-        newWindowReq$.subscribe(async (e) => {
-          console.log('newWindowReq', e);
-          if(e.detail.type === "file") {
-            path.value = { path : e.detail.payload, script : false };
-          }
-        });
+          /******** key event ********/
 
-        const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
-        namedPipe$.subscribe(e => { 
-          console.log("namedPipe",e)
-          action(e.detail) 
-        });
-
-        /******** onMounted ********/
-        onMounted(() => { 
-          console.log('mounted');
-          busy.value = false;
-          cnvParams.value = {...cnvParams.value};
-          rawParams.value = {...rawParams.value};
-          nextTick(() => { console.log('rendered'); });
-        })
-        fromEvent('load').subscribe(()=>{ console.log('loaded'); });
-
-        /******** mount ********/
-        return {
-          busy, 
-          divRef, canvasRef, selectRef, cnvParams, 
-          contextRef, clickContextMenu,
-          stalkerRef
-        }
-      }
-    });
-
-    app.component('context-menu', {
-      setup() {
-        const context = ref({left:"0px", top:"0px", display:"non"})
-        const items = ref({})
-        fromEvent(document, 'mousedown').subscribe(e=>{ 
-          if(!e.target.closest('.contextmenu')){
-            context.value = { left:`0px`, top:`0px`, display:"none" }
-          }
-        });
-        return { items, context }
-      },
-      methods: {
-        show(x, y, items) { 
-          this.items = items;
-          this.context = { left:`${x}px`, top:`${y}px`, display:"block" } 
-        },
-        close() { this.context = { left:`0px`, top:`0px`, display:"none" } },
-      },
-      template: `
-        <div class="contextmenu" :style="context" >
-          <template v-for="{type, key, value} in items">
-            <div v-if="type === 'div'" @click="$emit('callback', key)">{{ value }}</div>
-            <hr v-if="type === 'hr'">
-          </template>
-        </div>
-      `
-    });
-    app.component('mouse-stalker', {
-      props: ['target'],
-      setup() {
-        const circleStyle = ref({
-          position: "fixed", pointerEvents: "none", userSelect: "none",
-          top: "-2.5px", left: "-2.5px", width: "6px", height: "6px",
-          border: "solid 0.8px #FFF", outline: "solid 0.6px #000", outlineOffset: "0px",
-          borderRadius: "50%", zIndex: "98"
-        })
-        const labelStyle = ref({
-          position: "fixed",pointerEvents: "none",userSelect: "none",
-          top: "10px",left: "10px",width: "100px",height: "45px",
-          overflow: "hidden",
-          fontSize:" x-small",whiteSpace: "pre-line", zIndex: "98"
-        })
-        const transform = ref({transform : "translate(-100px, -100px)"})
-        const origin = ref({ left: 0, top: 0 })
-        const modifier = ref({ shiftKey: false, ctrlKey: false, altKey : false })
-        const text = ref({ unModified: "", shiftKey: "", ctrlKey: "", altKey : "" })
-        const showtext = ref("")
-        const visually = ref(false)
-
-        fromEvent(document.getElementById("canvas"), "mouseenter").subscribe(e => {
-          visually.value = true;
-        });
-        fromEvent(document.getElementById("canvas"), "mouseleave").subscribe(e => {
-          visually.value = false
-        });
-        fromEvent(document, 'mousemove').subscribe(e => {
-          origin.value.left = window.innerWidth > e.clientX + 100 ?  10 : -90;
-          origin.value.top = window.innerHeight > e.clientY + 30 ? 10 : -30;
-          transform.value = {transform : `translate(${e.clientX}px, ${e.clientY}px)`};
-          // const rect = cursorRef.value.getBoundingClientRect();
-        });
-        merge(fromEvent(document, 'keydown'), fromEvent(document, 'keyup'))
-          .pipe(filter(e => e.repeat === false && ["Shift","Control","Alt"].includes(e.key)))
-          .subscribe(e => {
-            modifier.value = { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey : e.altKey }
+          const keydown$ = fromEvent(document, 'keydown').pipe(filter(n => n.repeat === false), share());
+          keydown$.pipe(filter(n => !["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey) )).subscribe(async (e) => {
+            switch(`${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`){
+              case "shift+ctrl+BracketLeft": termShow.value = !termShow.value; break;
+              case "alt+KeyZ": // コマンド送信テスト
+                termRef.value.input_insert("___")
+                break;
+              case "alt+KeyX": // コマンド送信テスト
+                termRef.value.input_append("___")
+                break;
+              case "alt+KeyC": // コマンド送信テスト
+              console.log(termRef.value)
+                if(termRef.value){
+                  termRef.value.input_overwrite("sleep") /* 隠してるときはコマンド何処から送るの？ */
+                }else{
+                  await onSubmit({ type: "sleep" })
+                }
+                break;
+              case "alt+KeyV": // ログテスト
+              console.log(termRef.value)
+                if(termRef.value){
+                  termRef.value.log("logout")
+                }else{
+                  await onSubmit({ type: "sleep" })
+                }
+              default:
+                break;
+            }
           });
-        merge(from(text), from(modifier)).subscribe(e => {
-          const key = modifier.value;
-          switch(true){
-            case key.shiftKey && !key.ctrlKey && !key.altKey:
-              showtext.value = text.value.shiftKey;
-              break;
-            case !key.shiftKey && key.ctrlKey && !key.altKey:
-              showtext.value = text.value.ctrlKey;
-              break;
-            case !key.shiftKey && !key.ctrlKey && key.altKey:
-              showtext.value = text.value.altKey;
-              break;
-            default:
-              showtext.value = text.value.unModified;
-              break;
+          
+          /******** contextmenu ********/
+          const onContextmenu = (e, n) => {
+            if(n.inSelected){
+              contextRef.value.show(e.clientX, e.clientY, 'IN')
+            }else{
+              contextRef.value.show(e.clientX, e.clientY, 'OUT')
+            }
+            e.preventDefault();
           }
-        });
-        return { circleStyle, transform, origin, labelStyle, showtext, text, visually }
-      },
-      methods: {
-        move(x, y) { 
-          // this.transform = {transform : `translate(${x}px, ${y}px)`} 
-        },
-        show(val) { this.text = { ...this.text, ...val } }
-      },
-      template: `
-        <div v-if="visually" :style="{...circleStyle, ...transform}"></div>
-        <div v-if="visually" :style="{...labelStyle, ...transform, ...origin,'-webkit-text-stroke': '2px white'}">{{showtext}}</div>
-        <div v-if="visually" :style="{...labelStyle, ...transform, ...origin, color: 'black'}">{{showtext}}</div>
-      `
-    });
+          const clickContextMenu = (e, key) => {
+            switch(key){
+              case 'send_term':
+                termRef.value.input_append(`py scripts/read.py '${JSON.stringify(canvasRef.value.getSelect())}'`)
+                break;
+              default:
+                break;
+            }
+          }
+          const sharedObject = reactive({
+            "IN" : [
+              { type : 'div', key :'copy_selected', value: 'Copy Selected' },
+              { type : 'div', key :'send_term', value: 'Send Terminal' },
+            ],
+            "OUT" : [
+              { type : 'div', key :'copy_full', value: 'Copy Full' },
+              { type : 'div', key :'copy_selected', value: 'Copy Selected' },
+              { type : 'div', key :'selected', value: 'Selected Coordinate' },
+              { type : 'hr' }, 
+              { type : 'div', key :'subprocess_csx', value: 'call csx subprocess ' },
+              { type : 'div', key :'subprocess_py', value: 'call py subprocess' },
+              { type : 'div', key :'subprocess_rs', value: 'call rust subprocess' },
+            ]
+          });
 
-    app.mount('#app');
+          /******** other event ********/
+          if(window.chrome.webview){
 
-  </script>
+            const updated$ = fromEvent(window.chrome.webview, 'updated');
+            updated$.subscribe(async (e) => {
+              console.log('updated', e);
+            });
+
+            const newWindowReq$ = fromEvent(window.chrome.webview, 'newWindowReq');
+            newWindowReq$.subscribe(async (e) => {
+              console.log('newWindowReq', e);
+              // switch(e.detail.type){
+              //   case 'file':
+              //     // path.value = { path : e.detail.payload, script : false };
+              //     window.wterm.inputln(`echo ${e.detail.payload}`);
+              //     break;
+              //   case 'http':
+              //     window.wterm.inputln(`title ${e.detail.payload}`);
+              //     break;
+              //   default:
+              //     break;
+              // }
+            });
+
+            const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
+            namedPipe$.subscribe(e => { 
+              console.log("namedPipe", e)
+            });
+          }
+          
+          /******** onMounted ********/
+          onMounted(async () => {
+            console.log('app mounted')
+            termShow.value = true;
+
+            const image = await asyncPostPng({ shift: 0, color: 0 })
+            canvasRef.value.redraw(image);
+
+            nextTick(() => { console.log('app rendered'); });
+          });
+          return { 
+            termShow, sharedObject, 
+            onMousemove,
+            onContextmenu, clickContextMenu,
+            canvasRef, contextRef, stalkerRef,
+            termRef, beforeOnKey, onChange, onSubmit, onAsyncSubmit
+          }
+        }
+      });
+      app.component('vue-pane', window.splitpanes.Pane);
+      app.component('vue-split-pane', window.splitpanes.Splitpanes);
+
+      app.component('context-menu', contextmenu);
+      app.component('mouse-stalker', stalker);
+      app.component('canvas-ex', canvasEx);
+      app.component('my-terminal', wtermComponent);
+      app.mount('#app');
+    </script>
+  </body>
 </html>
+

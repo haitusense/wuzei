@@ -1,8 +1,13 @@
 
 例外、ctrl+cの動作
 ## 0.1.3 (2024--)
-- fix : F5 reload
+- update : wry & tao version
+- fix : F5 reload (event_loop-init)
 - add : hraw scripting
+- add : terminal
+- add : window move / remember the window size and position
+- change : custom protocol logic / ipc handler logic
+- change : to componentize a vue program
 ## 0.1.2 (2024-03-27)
 - change : namedpipe logic
 - fix : stalker GUI
@@ -15,4 +20,3 @@
 - fix : rendering shortcut
 ## 0.1.0 (2024-03-25)
 - first release
-
