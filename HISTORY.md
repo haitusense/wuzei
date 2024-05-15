@@ -1,3 +1,8 @@
+
+例外、ctrl+cの動作
+## 0.1.3 (2024--)
+- fix : F5 reload
+- add : hraw scripting
 ## 0.1.2 (2024-03-27)
 - change : namedpipe logic
 - fix : stalker GUI

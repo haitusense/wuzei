@@ -5,16 +5,17 @@ use tokio::io::Interest;
 use anyhow::bail;
 
 pub async fn pipe(pipename:&str) -> anyhow::Result<String> {
-  pipe_validate(pipename, |res| { Some(&res) }).await
+  pipe_validate(pipename, |res| { Some(res.to_owned()) }).await
 }
 
-pub async fn pipe_validate<F: FnOnce(&str)-> Option<&str>>(pipename:&str, func:F) -> anyhow::Result<String> {
+pub async fn pipe_validate<F: Fn(&str)-> Option<String>>(pipename:&str, func:F) -> anyhow::Result<String> {
   let server : NamedPipeServer = ServerOptions::new().create(format!(r##"\\.\pipe\{pipename}"##).as_str())?;
   let _ = server.connect().await?;
   let res = pipe_read(&server).await?;
+  // success, fail, error
   match func(&res) {
-    Some(_) => pipe_write(&server, "Ok").await?,
-    None => pipe_write(&server, "Err").await?
+    Some(e) => pipe_write(&server, format!(r##"{{ "status" : "success", "detail" : {e} }}"##).as_str()).await?,
+    None => pipe_write(&server, r##"{ "status" : "fail" }"##).await?
   }
   let _ = pipe_read(&server).await?;
   server.disconnect()?;

@@ -64,7 +64,7 @@
       <!-- context-menu / mouse-stalker -->
       <context-menu ref="contextRef" v-on:callback="clickContextMenu($event)"></context-menu>
       <mouse-stalker ref="stalkerRef" ></mouse-stalker>
-
+    </div>
   </body>
   <script type="module">
     console.log("index.html")
@@ -90,9 +90,19 @@
         const path = ref({path:"", script:false})
 
         /******** action ********/
-        const action = (e) => {
+        const action = async (e) => {
           console.log(e);
           switch(e.type){
+            case "resize":
+              let width = e.payload[0];
+              let height = e.payload[1];
+              
+              let res = await Wuzei.fetchJson({ type : "resize", payload : { 
+                width: width,
+                height : height
+              } });
+              rawParams.value = {...rawParams.value}
+              break;
             case "alert":
               alert(e.payload[0])
               break;
@@ -212,6 +222,11 @@
           switch(e.key){
             case '\\':
               cnvParams.value = { ...cnvParams.value, rendering : !cnvParams.value.rendering};
+              e.preventDefault();
+              break;
+            case '.':
+              const dst = await Wuzei.fetchJson({ type : "get_state" });
+              console.log(dst);
               e.preventDefault();
               break;
             default:
@@ -493,5 +508,6 @@
     });
 
     app.mount('#app');
+
   </script>
 </html>

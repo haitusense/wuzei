@@ -35,7 +35,7 @@ struct Args {
   #[arg(short, long)]
   start_url: Option<String>,
 
-  #[arg(short, long, default_value=r#"[]"#)]
+  #[arg(short, long, default_value=r#"["app.js"]"#)]
   register_javascript: String,
 
   #[arg(short, long, default_value="wuzeiNamedPipe")]
@@ -79,9 +79,9 @@ static ARGS: std::sync::OnceLock<Mutex<Args>> = std::sync::OnceLock::new();
 fn get_args() -> &'static Mutex<Args> {
   ARGS.get_or_init(|| Mutex::new(Args::parse_with_attach_console()))
 }
-static MMF_HEADER: std::sync::OnceLock<std::sync::Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator>> = std::sync::OnceLock::new();
-fn get_mmf_header() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator> {
-  MMF_HEADER.get_or_init(|| Mutex::new(huazhi::memorymappedfile::MemoryMappedFileCreator::new(format!("{}_header", get_args().lock().unwrap().memorymapped).as_str(), 4096).unwrap()))
+static HEADER: std::sync::OnceLock<std::sync::Mutex<serde_json::Value>> = std::sync::OnceLock::new();
+fn get_header() -> &'static Mutex<serde_json::Value> {
+  HEADER.get_or_init(|| Mutex::new(json!({ "width": 0, "height": 0 })))
 }
 static MMF: std::sync::OnceLock<std::sync::Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator>> = std::sync::OnceLock::new();
 fn get_mmf() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator> {
@@ -89,22 +89,18 @@ fn get_mmf() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator
 }
 
 pub fn mmf_init(width:usize, height:usize){
-  use huazhi::memorymappedfile::*;
-
   let json = json!({ "width" : width, "height": height });
   let mut json_str = serde_json::to_string(&json).unwrap();
   json_str.push('\0');
-
-  let mut mmf_header = get_mmf_header().lock().unwrap();
-  mmf_header.to_accessor().write_array(0, &json_str.as_bytes().to_vec());
+  
+  let mut header = get_header().lock().unwrap();
+  *header = json;
 
   let mut mmf_body = get_mmf().lock().unwrap();
   mmf_body.resize(width * height * 4).unwrap();
 }
 
-/*
-  StartCause::Initでapp.js読んでるので注意
-*/
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
   let args = get_args().lock().unwrap().clone();
@@ -114,12 +110,44 @@ async fn main() -> anyhow::Result<()> {
   let event_loop = EventLoopBuilder::<huazhi::UserEvent>::with_user_event().build();
 
   mmf_init(320, 240);
-  huazhi::memorymappedfile::mmf_image::init_image(args.memorymapped.as_str());
+  huazhi::memorymappedfile::mmf_image::init_image(args.memorymapped.as_str(), 320, 240);
 
   let window = WindowBuilder::new()
     .with_title("wuzei")
     .with_window_icon(RESOURCE.get_icon("image/icon.png"))
     .build(&event_loop).context("err")?;
+
+  {
+    println!("{} {}", "resist pipe".blue(), args.namedpipe.as_str());
+    let proxy = event_loop.create_proxy();
+    let path = args.namedpipe.as_str().to_owned();
+    tokio::spawn(async move {
+      loop {
+        match huazhi::namedpipe::pipe_validate(path.as_str(), |res| { 
+          if serde_json::from_str::<serde_json::Value>(res).is_ok() {
+            let hoge = get_header().lock().unwrap().clone();
+            let json = serde_json::to_string(&hoge).unwrap();
+            Some(json) 
+          } else { 
+            None 
+          }
+        }).await {
+          Ok(n) => {
+            println!("{} {}","pipe received".green(), n);
+            if proxy.send_event(huazhi::UserEvent::NewEvent("namedPipe".to_string(), format!("{n}"))).is_err() { 
+              println!("{} {:?}", "error pipe".red(), "proxy");
+              break;
+            }
+          },
+          Err(e) => { 
+            println!("{} {:?}", "error pipe".red(), e);
+            continue;
+          }
+        }
+      }
+      println!("{}", "exit pipe".blue())
+    });
+  }
 
   /* setting webview */
   let webview = WebViewBuilder::new(window).context("err")?
@@ -128,7 +156,7 @@ async fn main() -> anyhow::Result<()> {
     .resist_javascript(RESOURCE.get_contents_from_json(args.register_javascript.as_str()))
     .resist_handler(&event_loop)
     .resist_navigate("wuzei", args.working_dir, args.start_url).context("err")?
-    .resist_pipe_handler(&event_loop, args.namedpipe.as_str())
+    // .resist_pipe_handler(&event_loop, args.namedpipe.as_str())
     .with_asynchronous_custom_protocol("wuzei".into(), move |request: huazhi::wry::http::Request<Vec<u8>>, responder| {
       tokio::spawn(async move {
         let res = match request.uri().path() {
@@ -150,4 +178,3 @@ async fn main() -> anyhow::Result<()> {
   });
 
 }
-

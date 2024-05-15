@@ -103,6 +103,87 @@ class Wuzei {
   // await navigator.clipboard.writeText("このテキストをクリップボードに書き込む");
 }
 
+class WuzeiTerm {
+  constructor(){ }
+
+  init(xterm, id) {
+    let term = new xterm.Terminal();
+    term.open(document.getElementById(id));
+    this.command = '';
+    
+    if (term._initialized) { return; }
+    term._initialized = true;
+
+    term.prompt = () => { this.prompt(term) };
+
+    this.welcome(term);
+
+    term.onKey(async e => {
+      switch(e.domEvent.key){
+        case 'ArrowUp':
+        case 'ArrowDown':
+          console.log("Arrow")
+          break;
+        case 'ArrowLeft':
+        case 'ArrowRight':
+          console.log("Arrowreftright")
+          break;
+        case 'Enter':
+          console.log(`(x,y) = (${term._core.buffer.x}, ${term._core.buffer.y}) : ${this.command}`);
+          await this.enter();
+          break;
+        case 'Backspace':
+          if (term._core.buffer.x > 2) {
+            term.write('\b \b');
+            this.command = this.command.slice(0, -1);
+          }
+          break;
+        default:
+          if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey){
+            term.write(e.key);
+            this.command += e.key;
+          }
+      }
+    });
+
+    this.term = term;
+  }
+
+  welcome(term) {
+    term.writeln('Welcome to xterm.js');
+    term.prompt();
+  }
+
+  prompt(term) {
+    term.write('\r\n> '); 
+    this.command = '';
+  }
+
+  async enter() {
+    this.term.write('\r\n');
+    // let res = await Wuzei.fetchJson({ 
+    //   type : "script", 
+    //   payload : this.command
+    // });
+    // console.log(res)
+    // this.term.write(res.code);
+
+    window.ipc.postMessage(JSON.stringify({ 
+      type : "process2", 
+      payload : [this.command]
+    }));
+
+    this.term.prompt();
+  }
+
+  print(src) {
+    this.term.write('\r\n' + src);
+    this.term.prompt();
+  }
+  // term.reset()
+}
+
+
 /* リフレッシュレート使うなら */
 // function animationFramePromise() {
 //   return new Promise<number>((resolve) => {

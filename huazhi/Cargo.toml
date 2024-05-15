@@ -21,6 +21,9 @@ num = "*"
 
 tempfile = "3.5.0"
 tokio = { version = "1.36.0", features = ["full"] }
+tokio-util = { version = "0.7.10", features = ["codec"] }
+futures = "*"
+bytes = "*"
 
 # mmf
 winapi = { version = "*", features = [ "memoryapi", "winnt", "errhandlingapi", "namedpipeapi", "winbase", ] }

@@ -1,5 +1,7 @@
 use anyhow::Context;
 use colored::*;
+use tokio_util::codec::*;
+use futures::prelude::*;
 
 /*
 Powershell 
@@ -25,6 +27,44 @@ pub async fn async_powershell() -> anyhow::Result<std::process::ExitStatus> {
     .args(&["dotnet", "script ./wait.csx"])
     .spawn().unwrap().wait().await;
   dst.context("context")
+}
+
+pub async fn async_process() {
+  let mut child = tokio::process::Command::new("powershell.exe")
+  // .args(&["-Command ", "[Console]::OutputEncoding"])
+  // .args(&["-Command ", "chcp 65001; [Console]::OutputEncoding"])
+  // .args(&["-NoProfile", "-Command", "chcp 65001;"])
+  // .arg("yt-dlp.exe --list-formats --color=always 'https://www.youtube.com/watch?v=whHNEb1ey1A'")
+  .args(&["-NoProfile", "-Command", "chcp 65001;", "ls"])
+  .stdout(std::process::Stdio::piped())
+  .spawn()
+  .expect("failed to start sleep");
+  
+  let stdout = child.stdout.take().unwrap();
+  // let mut reader = FramedRead::new(stdout, LinesCodec::new());
+  let mut reader = FramedRead::new(stdout, MyDecoder);
+
+  while let Some(line) = reader.next().await {
+    print!("{}", line.unwrap());
+  }
+
+  println!("{:?}",child);
+}
+
+struct MyDecoder;
+
+impl Decoder for MyDecoder {
+  type Item = String;
+  type Error = std::io::Error;
+
+  fn decode(&mut self, src: &mut bytes::BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+    if let Some(i) = src.iter().position(|&b| b == b'\n') {
+      let line = src.split_to(i + 1);
+      Ok(Some(String::from_utf8_lossy(&line).to_string()))
+    } else {
+      Ok(None)
+    }
+  }
 }
 
 #[allow(dead_code)]

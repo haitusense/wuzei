@@ -460,10 +460,7 @@ pub fn write_array_from_file(path: &str, file_path: &str) -> anyhow::Result<()> 
 
 pub mod mmf_image {
 
-  pub fn init_image(path:&str) {
-    let json = crate::memorymappedfile::read_json(format!("{path}_header").as_str()).unwrap();
-    let width = json["width"].as_u64().unwrap() as usize;
-    let height = json["height"].as_u64().unwrap() as usize;
+  pub fn init_image(path:&str, width:usize, height:usize) {
     let mut src = vec![0i32; width*height];
     for y in 0..height {
       for x in 0..width {

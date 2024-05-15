@@ -50,20 +50,18 @@ try{
 }
 
 static async Task<string> WritePipe(string addr, string val){
-  string temp = "Err";
   try{ 
     using var pipe  = new System.IO.Pipes.NamedPipeClientStream(".", addr, System.IO.Pipes.PipeDirection.InOut, System.IO.Pipes.PipeOptions.Asynchronous);
     await pipe.ConnectAsync();      
     using var sr = new StreamReader(pipe);
     using var sw = new StreamWriter(pipe);
-    System.Threading.Thread.Sleep(500);
-    await sw.WriteLineAsync(val);        
+    await sw.WriteLineAsync(val);
     await sw.FlushAsync();
     string response = await sr.ReadLineAsync();
-    temp = response;
+    return response;
   } catch ( IOException ofex ) { Console.WriteLine($"DisConnect {ofex.ToString()}");
   } catch ( Exception e ) { Console.WriteLine(e.ToString()); }
-  return temp;
+  return "Err";
 }
 
 public class MemoryMapReader {
@@ -80,5 +78,9 @@ public class MemoryMapReader {
       using var stream  = mmf.CreateViewStream();
       act(stream);
     } catch ( Exception e ) { Console.WriteLine(e.ToString()); }
+  }
+
+  public MemoryMapReader(){
+    
   }
 }

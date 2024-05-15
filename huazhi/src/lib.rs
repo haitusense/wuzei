@@ -85,6 +85,8 @@ pub struct Message{
 pub enum UserEvent {
   Message(String),
   SubProcess(serde_json::Value),
+  SubProcess2(serde_json::Value),
+  Py(serde_json::Value),
   NewEvent(String, String)
 }
 
@@ -193,6 +195,8 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
         match src.type_name.as_str() {
           "message" => { let _ = proxy_ipc.send_event(UserEvent::Message(format!("{:?}",src.payload))).unwrap(); },
           "process" => { let _ = proxy_ipc.send_event(UserEvent::SubProcess(src.payload)).unwrap(); },
+          "process2" => { let _ = proxy_ipc.send_event(UserEvent::SubProcess2(src.payload)).unwrap(); },
+          "py" => { let _ = proxy_ipc.send_event(UserEvent::Py(src.payload)).unwrap(); },
           _ => println!("{src:?}")
         };
       })
@@ -205,7 +209,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
     tokio::spawn(async move {
       loop {
         match namedpipe::pipe_validate(path.as_str(), |res| { 
-          if serde_json::from_str::<serde_json::Value>(res).is_ok() { Some(res) } else { None }
+          if serde_json::from_str::<serde_json::Value>(res).is_ok() { Some(res.to_owned()) } else { None }
         }).await {
           Ok(n) => {
             println!("{} {}","pipe received".green(), n);
@@ -258,6 +262,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
       });
     })
   }
+
 }
 
 
