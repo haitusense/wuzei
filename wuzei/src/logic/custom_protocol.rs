@@ -292,6 +292,11 @@ impl LoggingStdout {
 #[pyo3::prelude::pyclass]
 struct Pixel;
 
+use numpy::prelude::*;
+use numpy::{PyArray, PyArray2};
+use pyo3::Python;
+use pyo3::Py;
+
 #[pyo3::prelude::pymethods]
 impl Pixel {
   fn get(&self, x:usize, y:usize) -> i32 {
@@ -309,6 +314,19 @@ impl Pixel {
     let width = mmf_value["width"].as_u64().unwrap() as usize;
     mmf.to_accessor().write::<i32>(4 * (x + y * width), src);
   }
+
+  fn width(&self) -> i32 {
+    let mmf = super::get_mmf().lock().unwrap();
+    let mmf_value = mmf.get_value();
+    let width = mmf_value["width"].as_u64().unwrap() as i32;
+    width
+  }
+  fn height(&self) -> i32 {
+    let mmf = super::get_mmf().lock().unwrap();
+    let mmf_value = mmf.get_value();
+    let height = mmf_value["height"].as_u64().unwrap() as i32;
+    height
+  }
   fn to_array(&self) -> Vec<i32> {
     use huazhi::memorymappedfile::*;
     let mut mmf = super::get_mmf().lock().unwrap();
@@ -318,5 +336,17 @@ impl Pixel {
     let mut dst = vec![0i32; width * height];
     mmf.to_accessor().read_array::<i32>(0, &mut dst);
     dst
+  }  
+  fn to_np<'py>(&self, py: Python<'py>) -> Py<PyArray2<i32>> {
+    use huazhi::memorymappedfile::*;
+    let mut mmf = super::get_mmf().lock().unwrap();
+    let mmf_value = mmf.get_value();
+    let width = mmf_value["width"].as_u64().unwrap() as usize;
+    let height = mmf_value["height"].as_u64().unwrap() as usize;
+    let mut v = vec![0i32; width * height];
+    mmf.to_accessor().read_array::<i32>(0, &mut v);
+    let arr = PyArray::from_vec_bound(py, v);
+    let pyarray = arr.reshape([height, width]).unwrap();
+    pyarray.into()
   }
 }
