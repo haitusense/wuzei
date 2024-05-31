@@ -1,4 +1,5 @@
 //@ts-check
+
 console.log("lib.js")
 
 const sleep = msec => new Promise(resolve => setTimeout(resolve, msec));
@@ -14,6 +15,13 @@ function indoc(src) {
   const regexp = new RegExp(`^[ \\t]{${indent}}`, 'gm');
   return src.replace(regexp, '');
 }
+
+const fruits = Object.freeze({
+  apple: '🍎',
+  banana: '🍌',
+  grape: '🍇',
+  orange: '🟠',
+})
 
 
 async function asyncCheckWebview() {
@@ -52,13 +60,28 @@ function post(type, payload) {
 }
 
 /**
+ * @param {any} obj
+ */
+function setState(obj) {
+  //@ts-ignore
+  const ipc = window.ipc;
+  if(ipc){
+    ipc.postMessage(JSON.stringify({ type: 'state', payload: obj }));
+  }else{
+    //@ts-ignore
+    window.dummyState = obj;
+  }
+}
+
+
+/**
  * @param {any} payload
  * @returns {Promise<any>}
  */
 async function asyncPostJson(type, payload) {
   //@ts-ignore
   if(window.chrome.webview){
-    const res = await asyncFetchWuzei(type, payload );
+    const res = await asyncFetchWuzei(type, payload);
     return await res.json();
   }else{
     return undefined;
@@ -98,7 +121,7 @@ async function asyncPostPixel(payload) {
 async function asyncPostPng(payload) {
   //@ts-ignore
   if(window.chrome.webview){
-    const res = await asyncFetchWuzei("refresh", payload );
+    const res = await asyncFetchWuzei("refresh", payload);
     const blob = await res.blob()
     const dataUrl = await asyncReadAsDataUrl(blob);
     return await asyncLoadImage(dataUrl);
@@ -183,21 +206,36 @@ function asyncLoadImage(path) {
   });
 }
 
-async function copyImageToClipboard(canvas, x, y, w, h) {
-  const imageData = canvas.getContext('2d').getImageData(x, y, w, h);
-  const temp = document.createElement('canvas');
-  temp.width = w;
-  temp.height = h;
-  const ctx = temp.getContext('2d');
-  //@ts-ignore
-  ctx.putImageData(imageData, 0, 0);
-    //@ts-ignore
-  temp.toBlob(async (blob) => { await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]); }, 'image/png');
-  console.log("clipboard")
+/* method */
+/**
+ * @param {string} path
+ * @param {string} subpath
+ */
+const readFile = async (path, subpath) => {
+  switch(path.split('.').pop()?.toLowerCase()){
+    case 'hraw':
+    case 'zip': {
+      const res = await asyncPostJson("readraw", { path: path, subpath: subpath });
+      console.log("read raw file", path, subpath);
+    } break;
+    case 'png':
+    case 'bmp': {
+      const res = await asyncPostJson("readpng", { path: path });
+      console.log("read png file", path, subpath);
+    } break;
+    default: {
+      // const json = { path : e.path };
+      // const res = await Wuzei.fetchJson({ type: "process", payload : ["dotnet", `script ./script.csx -- '${JSON.stringify(JSON.stringify(json))}'` ] });
+      // console.log("read file use script", res);
+    } break;
+  }
 }
-// await navigator.clipboard.writeText("このテキストをクリップボードに書き込む");
 
-export { sleep, indoc, asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPixel, asyncPostPng };
+export { 
+  sleep, indoc, asyncCheckWebview, 
+  post, asyncGetTxt, asyncPostJson, asyncPostPixel, asyncPostPng, setState,
+  readFile
+};
 
 
 /*

@@ -1,4 +1,10 @@
-const { onMounted, onUnmounted, nextTick, ref } = window.Vue;
+const { onMounted, onUnmounted, ref } = window.Vue;
+const { /* from */ /* fromEvent */ of, merge, partition,
+  filter, first, delay, map, takeUntil, debounceTime, scan,
+  bufferToggle, switchMap, mergeMap,  
+  share, tap
+} = window.rxjs;
+const { from, fromEvent } = window.VueUse;
 
 /*  <!-- 例えば、ターミナルエミュレータの設定で256色パレットではなく、
     16色パレットを使用している場合、\x1b[33mは茶色っぽく表示される可能性があります。 -->
@@ -40,8 +46,9 @@ function splitcom(src) {
   if(src){
     // A: const result = src.match(/"([^"]*?)"|'([^']*?)'|[^\s"']+/g);
     // B: const result = src.split(/(?:"([^"]+)"|'([^']*?)'|([^\s"']+)) ?/).filter(e => e)
-    return Array.from(src.matchAll(/"([^"]*?)"|'([^']*?)'|([^\s"']+)|([\s]+)/g)).map((n, index, arr) => {
-      return { full:n[0], captured: n[1] || n[2] || n[3], index: n.index };
+    // return Array.from(src.matchAll(/"([^"]*?)"|'([^']*?)'|([^\s"']+)|([\s]+)/g)).map((n, index, arr) => {
+    return Array.from(src.matchAll(/"([^"]*?)"|'([^']*?)'|([^\s"']+)|("[^"]*)$|('[^']*)$|([\s]+)/g)).map((n, index, arr) => {
+      return { full:n[0], captured: n[1] || n[2] || n[3] || n[4] || n[5] || n[6], index: n.index };
     });
   }else{
     return []
@@ -51,8 +58,8 @@ function splitcom(src) {
 function commandlineParser(src){
   const matches = splitcom(src);
   const e = {
-    type: matches.filter(n=> n.captured)[0]?.captured,
-    payload: matches.filter(n=> n.captured).slice(1).map(n=>n.captured)
+    type: matches.filter(n => n.captured)[0]?.captured,
+    payload: matches.filter(n => n.captured).slice(1).map(n => n.captured).filter(n => n.trim() !== '')
   };
   return e;
 }
@@ -72,6 +79,8 @@ function syntaxHighlighting(src){
       flag = true
       dst += `\x1B[38;5;226m${match.full}\x1B[0m`
       continue;
+    }else if(match.full.startsWith('\"') || match.full.startsWith('\'')){
+      dst += `\x1B[38;5;39m${match.full}\x1B[0m`
     }else if(match.full.startsWith('-')){
       dst += `\x1B[38;5;248m${match.full}\x1B[0m`
     }else{
@@ -246,11 +255,13 @@ class Wterm {
   #buildOutput(){
     if(this.#pos < 0) this.#pos = 0;
     if(this.#pos > this.#current_line.length) this.#pos = this.#current_line.length;
-    const len = this.#pos + this.#prompt_str.length + 1;
-    const buf = syntaxHighlighting(this.#current_line);
-
-    this.#terminal.write(`\x1b[0G\x1b[2K${this.#prompt_str}${buf}\x1b[${len}G`);
+    this.#newCurrentLine(this.#pos)
     this.onChange(this.#current_line)
+  }
+  #newCurrentLine(pos){
+    const len = pos + this.#prompt_str.length + 1;
+    const buf = syntaxHighlighting(this.#current_line);
+    this.#terminal.write(`\x1b[0G\x1b[2K${this.#prompt_str}${buf}\x1b[${len}G`);
   }
   async #enter(){
     this.#isbusy = true
@@ -310,8 +321,7 @@ class Wterm {
   /*** public method ***/
   log(src){
     this.#terminal.writeln(`\x1b[0G\x1b[2K${src}`);
-    const len = this.#current_line.length + this.#prompt_str.length + 1;
-    this.#terminal.write(`\x1b[0G\x1b[2K${this.#prompt_str}${this.#current_line}\x1b[${len}G`);
+    this.#newCurrentLine(this.#current_line.length)
   }
   write(args){
     this.#terminal.write(args);
@@ -334,6 +344,11 @@ class Wterm {
     this.#buildOutput();
     await this.#enter()
   }
+  paste(){
+    navigator.clipboard
+      .readText()
+      .then((n) => this.input_append(n));
+  }
   clear(){ 
     localStorage.removeItem('wterm_buffer')
     this.#terminal.clear()
@@ -348,10 +363,11 @@ class Wterm {
   emitはasyncできないのでpropsでsendにつなぐ
 */
 const wtermComponent = {
-  template: `<div id="terminal" style="height: 100%;"> </div>`,
+  template: `
+    <div id="terminal" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>
+  `,
   data() { return { /* count: 0 */ } },
   props: {
-    // sharedObject: { type: Object, required: true }
     onAsyncKey: { type: Function, },
     onAsyncSubmit: { type: Function, default: ()=>{ return false; }, required: false },
   },
@@ -371,8 +387,10 @@ const wtermComponent = {
   */
   setup(props, { emit }) {
     console.log("setup term") /*毎回呼ばれる*/
-    const terminalRef = ref(false);
-    
+    const terminalRef = ref(null);
+
+    /******** terminal ********/
+
     const term = new Wterm();
     term.beforeOnKey = async (e) => { return props.onAsyncKey(e) };
     term.onChange = async (e) => { emit('on-change', e) };
@@ -381,6 +399,55 @@ const wtermComponent = {
       return await props.onAsyncSubmit(e) // 戻り値を受ける
     };
 
+    /******** mouse event ********/
+
+    /* mousedown */
+    fromEvent(terminalRef, 'mousedown').pipe(filter(e=> e.buttons == 4)).subscribe(e => {
+      term.paste();
+      e.preventDefault();
+    });
+
+    /* drop */
+    fromEvent(terminalRef, 'dragenter').subscribe(e => {
+      e.preventDefault();
+      terminalRef.value.style.opacity = 0.65
+    });
+    fromEvent(terminalRef, 'dragleave').subscribe(e => {
+      e.preventDefault();
+      if (!e.currentTarget.contains(e.relatedTarget)) {
+        terminalRef.value.style.opacity = 1
+      }
+    });
+    fromEvent(terminalRef, 'dragover').subscribe(e => {
+      e.stopPropagation();
+      e.preventDefault();
+    });
+
+    // drop -> newWindowReqの順
+    const drop = (path) =>{
+      term.input_append(path)
+      terminalRef.value.style.opacity = 1
+    }
+    if(window.chrome.webview){
+      fromEvent(terminalRef, 'drop').pipe(
+        switchMap((e) => merge( of(e).pipe(delay(100)), fromEvent(window.chrome.webview, 'newWindowReq')).pipe(first()) )
+      ).subscribe(e => {
+        drop(e.detail.payload)
+      })
+    }else{
+      fromEvent(terminalRef, 'drop').subscribe(async e => {
+        e.stopPropagation(); // 親への伝播をとめる
+        e.preventDefault();  //イベントのキャンセル
+        const file = e.dataTransfer.files[0].name;
+        drop(file)
+      })
+    }
+
+
+
+    
+
+    /******** onMounted ********/
     onMounted(() => {
       console.log('terminal mounted')
       term.open('terminal');
@@ -390,7 +457,7 @@ const wtermComponent = {
       console.log('terminal unmounted')
       term.close()
     })
-    return { term }
+    return { term, terminalRef }
   }
 }
 

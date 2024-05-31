@@ -12,13 +12,13 @@ const styled = {
     top: "-2.5px", left: "-2.5px", 
     width: "6px", height: "6px",
     border: "solid 0.8px #FFF", outline: "solid 0.6px #000", outlineOffset: "0px",
-    borderRadius: "50%", zIndex: "98"
+    borderRadius: "50%", zIndex: "90"
   },
   label : {
     position: "fixed", pointerEvents: "none", userSelect: "none",
     width: "100px", height: "45px",
     overflow: "hidden",
-    fontSize:" x-small", whiteSpace: "pre-line", zIndex: "98"
+    fontSize:" x-small", whiteSpace: "pre-line", zIndex: "90"
   }
 }
 
@@ -36,7 +36,7 @@ const stalker = {
   `,
   props: ['target'],
   methods: {
-    intext(src){ this.text = src }
+    intext(key, val){ this.text = ({ ...this.text, [key]: val }); }
   },
   setup(props) {
     const circleStyle = ref(styled.circle)
@@ -44,13 +44,14 @@ const stalker = {
 
     const transform = ref({transform : "translate(-100px, -100px)"})
     const origin = ref({ left: "10px", top: "10px" })
-    const modifier = ref({ shiftKey: false, ctrlKey: false, altKey : false })
+    const keystate = ref({ mouse:0, shiftKey: false, ctrlKey: false, altKey : false })
     const showtext = ref({ })
     const text = ref({
-      unModified : "null",
-      shiftKey : "shift",
-      ctrlKey : "ctrl",
-      altKey : "alt",
+      "0" : "null",
+      "1" : "1",
+      "shift+0" : "shift",
+      "ctrl+0" : "ctrl",
+      "alt+0" : "alt"
     })
     const visually = ref(false)
 
@@ -62,28 +63,21 @@ const stalker = {
       // origin.value.top = window.innerHeight > e.clientY + 30 ? 20 : -30;
       transform.value = {transform : `translate(${e.clientX}px, ${e.clientY}px)`};
     });
+
     merge(fromEvent(document, 'keydown'), fromEvent(document, 'keyup'))
       .pipe(filter(e => e.repeat === false && ["Shift","Control","Alt"].includes(e.key)))
       .subscribe(e => {
-        modifier.value = { shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey : e.altKey }
+        keystate.value = { ...keystate.value, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, altKey : e.altKey }
       });
-    merge(from(text), from(modifier)).subscribe(e => {
-      const key = modifier.value;
-      switch(true){
-        case key.shiftKey && !key.ctrlKey && !key.altKey:
-          showtext.value = text.value.shiftKey;
-          break;
-        case !key.shiftKey && key.ctrlKey && !key.altKey:
-          showtext.value = text.value.ctrlKey;
-          break;
-        case !key.shiftKey && !key.ctrlKey && key.altKey:
-          showtext.value = text.value.altKey;
-          break;
-        default:
-          showtext.value = text.value.unModified;
-          // showtext.value = `${text.value.x} ${text.value.y}`
-          break;
-      }
+    merge(fromEvent(document, 'mouseup'), fromEvent(document, 'mousedown'))
+      .subscribe(e => {
+        keystate.value = { ...keystate.value, mouse: e.buttons }
+      });
+
+    merge(from(text), from(keystate)).subscribe(e => {
+      const key = keystate.value;
+      const keys = `${key.shiftKey ? "shift+": ""}${key.ctrlKey ? "ctrl+" : ""}${key.altKey ? "alt+" : ""}${key.mouse}`
+      showtext.value = text.value[keys];
     });
 
     return { circleStyle, transform, origin, labelStyle, showtext, text, visually }

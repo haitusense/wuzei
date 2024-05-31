@@ -29,47 +29,52 @@ wuzei.exe -c alloc-console
 ```powershell
 wuzei.exe -s index.html
 ```
-### Terminal keyboard shortcuts
-
-| Commands                               | Keyboard shortcuts |
-| :--                                    | :--:               |
-| Show/Hide the Terminal window          | Ctrl + '@'         |
-| Cycle through previously used commands | ↑ / ↓              |
-| Copy                                   | Ctrl+C             |
-| Paste                                  | Ctrl+V             |
-| clear                                  | ctrl+l             |
-
-
-1 行上にスクロール - Ctrl+Alt+PageUp
-一行下にスクロール - Ctrl+Alt+PageDown
-ページを上にスクロール - Shift+PageUp
-ページを下にスクロール - Shift+PageDown
-一番上までスクロール - Ctrl+Home
-一番下までスクロール - Ctrl+End
-前のコマンドまでスクロールします - Ctrl+Up
-次のコマンドまでスクロールします - Ctrl+Down
 
 ### Canvas default key assignment
 
-| function           | mouse               | shotcut-key     | command |
-| :--                | :--:                | :--:            | :--     |
-| File Read          | Drag and Drop       |                 | |
-| bitshift up        | shift + wheel       | ArrowUp         | bitshift [num] |
-| bitshift down      | shift + wheel       | ArrowDown       | |
-| mono/color         |                     | ArrowLeft/Right | |
-| rendering          | 4th,5th             | '\'             | |
-| zoom up   (full)   | ctrl + wheel        | ctrl + '+'      | |
-| zoom down (full)   | ctrl + wheel        | ctrl + '-'      | |
-| zoom up   (canvas) | alt + wheel         |                 | zoom [level] |
-| zoom down (canvas) | alt + wheel         |                 | |
-| select             | left + move         |                 | select [left] [top] [right] [bottom] |
-| prompt-dialog      | center (deep click) |                 | |
-| alert              |                     |                 | alert [message] |
-| context menu       | right               |                 | |
+| function                          | mouse                    | shotcut-key        | terminal command |
+| :--                               | :--:                     | :--:               | :--              |
+| **Show/Hide the Terminal window** |                          | Ctrl + '@'         | |
+| **read file**                     | drag and drop [*]        |                    | ```read [path]``` |
+| **select**                        | left + move [*]          |                    | ```select [left] [top] [right] [bottom]``` |
+| **context menu**                  | right [*]                |                    | |
+| **bitshift up**                   | shift + wheel            | shift + ↑          | ```bitshift [num]``` |
+| **bitshift down**                 | shift + wheel            | shift + ↓          | |
+| **zoom up**   (browser)           | ctrl + wheel             | ctrl + '+'         | |
+| **zoom down** (browser)           | ctrl + wheel             | ctrl + '-'         | |
+| **zoom up**   (canvas)            | shift + ctrl + wheel [*] | shift + ctrl + '+' | ```zoom [level]``` |
+| **zoom down** (canvas)            | shift + ctrl + wheel [*] | shift + ctrl + '-' | |
+| **mono/color**                    |                          | shift + ←/→        | ```color [num]``` |
+| **rendering**                     |                          | '\'                | |
+| echo                              |                          |                    | ```echo [args]``` |
+| show state                        |                          |                    | ```state``` |
+| set state                         |                          |                    | ```set [key] [value]``` |
+| scripting (js eval)               |                          |                    | ```js1 [command]``` |
+| scripting (py eval)               |                          |                    | ```py1 [command]``` |
+| scripting (py preset)             |                          |                    | ```py-pst``` |
+| scripting (py from file)          |                          |                    | ```py [path] [args]``` |
+| scripting (ps)                    |                          |                    | ```ps``` |
 
+### Terminal keyboard shortcuts / mouse event
 
+| function                               | mouse       | shotcut-key |
+| :--                                    | :--:        | :--:        |
+| select text                            | left + move |             |
+| paste                                  | center      | ctrl + v    |
+| copy                                   |             | ctrl + c    |
+| clear                                  |             | ctrl + l    |
+| context menu (browser default)         | right       |             |
+| Cycle through previously used commands |             | ↑ / ↓       |
 
-[*] command : send from namedpipe or prompt-dialog
+#### disable
+
+- send from namedpipe or prompt-dialog
+
+| function           | mouse                | shotcut-key     | terminal command |
+| :--                | :--:                 | :--:            | :--     |
+| prompt-dialog      | center (deep click)  |                 | |
+| alert              |                      |                 | alert [message] |
+
 
 **color**
 
@@ -95,3 +100,5 @@ wuzei.exe -s index.html
     ↑ ↑ ↑ ↑
     R G B A
 ```
+
+### Scripting 

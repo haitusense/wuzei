@@ -15,7 +15,8 @@ pub enum TypeNames {
   Refresh,
   GetPixel,
   GetPath,
-
+  ReadRaw,
+  ReadPng,
   Py1,
   Py,
   Ps,
@@ -54,16 +55,16 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       response(ResContent::JSON(&dst))
     },
     TypeNames::Resize => {
-      let _width = payload["width"].as_i64().unwrap_or(320) as usize;
-      let _height = payload["height"].as_i64().unwrap_or(240) as usize;
-      // crate::mmf_init(width, height);
-
+      let width = payload["width"].as_i64().unwrap_or(320) as usize;
+      let height = payload["height"].as_i64().unwrap_or(240) as usize;
+      super::mmf_init(width, height);
       let dst = serde_json::json!({ "state": "successed" });
       response(ResContent::JSON(&dst))
     }
     TypeNames::Refresh => {
       use huazhi::memorymappedfile::*;
-      let shift = payload["shift"].as_i64().unwrap_or(0) as i32;
+      println!("{:?}", payload);
+      let shift = payload["bitshift"].as_i64().unwrap_or(0) as i32;
       let color = payload["color"].as_i64().unwrap_or(0) as i32;
 
       let mut mmf = super::get_mmf().lock().unwrap();
@@ -85,8 +86,6 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       let x = payload["x"].as_i64().unwrap_or(0) as i32;
       let y = payload["y"].as_i64().unwrap_or(0) as i32;
 
-      println!("{:?} {} {}", payload, x, y);
-
       let dst = if x < 0 || width - 1 < x || y < 0 || height - 1 < y {
         serde_json::json!({ "status": "failed", "x" : x, "y" : y, "data": null })
       } else {
@@ -102,7 +101,35 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       let dst = serde_json::json!({ "status": "successed", "payload": path });
       response(ResContent::JSON(&dst))
     },
-    
+    TypeNames::ReadRaw => {
+      use hraw::{*, buffer::*};
+      use huazhi::memorymappedfile::*;
+      let path = payload["path"].as_str().unwrap_or("");
+      let subpath = payload["subpath"].as_str().unwrap_or("data.raw");
+      let mut hraw = hraw::Hraw::new(path).unwrap();
+      hraw.info().unwrap();
+      let size = hraw.header().to_size();
+
+      super::mmf_init(size.0, size.1);
+      let mut mmf = super::get_mmf().lock().unwrap();
+      let _ = mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, subpath);
+
+      let dst = serde_json::json!({ "status": "successed", "payload": path });
+      response(ResContent::JSON(&dst))
+    },
+    TypeNames::ReadPng  => {
+      use hraw::*;
+      use huazhi::memorymappedfile::*;
+      let path = payload["path"].as_str().unwrap_or("");
+      let (width, height) = read_png_head(path);
+
+      super::mmf_init(width, height);
+      let mut mmf = super::get_mmf().lock().unwrap();
+      let _ = mmf.to_accessor().to_mut_slice::<i32>().from_png(path);
+
+      let dst = serde_json::json!({ "status": "successed", "payload": path });
+      response(ResContent::JSON(&dst))
+    },
     // py.eval_bound
     // py.run_bound(args.join("\r\n").as_str(),None, None)?;
     // py.from_code_bound

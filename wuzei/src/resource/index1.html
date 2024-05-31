@@ -387,7 +387,7 @@
         const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
         namedPipe$.subscribe(e => { 
           console.log("namedPipe",e)
-          action(e.detail) 
+          action(e.detail)
         });
 
         /******** onMounted ********/

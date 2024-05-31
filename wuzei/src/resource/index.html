@@ -9,7 +9,7 @@
     <link href="./splitpanes@3.1.5/dist/splitpanes.min.css" rel="stylesheet">
     <script src="./splitpanes@3.1.5/dist/splitpanes.umd.min.js"></script>
 
-    <link href="./@xterm/xterm@5.5.0/css/xterm.min.css" rel="stylesheet">
+    <link href="./@xterm/xterm@5.5.0/css/xterm.min.css" rel="stylesheet"/>
     <script src="./@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 
@@ -19,24 +19,29 @@
       html, body { height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
       #app{ height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
     </style>
-    <link href="./component/canvas-ex.css" rel="stylesheet">
+    <link href="./component/context.css" rel="stylesheet"/>
   </head>
   <body>
     <!-------- view -------->
     <div id ="app">
       <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
         <!-- canvas -->
-        <vue-pane style=" overflow:scroll; position: relative; background-color: gray;">
+        <vue-pane ref="testRef" style="overflow:scroll; position: relative; background-color: gray;">
           <canvas-ex 
             :margin="20"
             ref = "canvasRef"
+            :zoom="zoom" @update:zoom="$event => (zoom = $event)"
+            :select="selected" @update:select="$event => (selected = $event)"
+            :rendering="rendering ? 'pixelated' : 'auto'"
+            @on-drop="onDrop"
             @on-context="onContextmenu"
             @on-mousemove="onMousemove"
+            @on-wheel="onWheel"
             ></canvas-ex>
         </vue-pane>
-        <vue-pane style="width:100%; background-color: black;" v-if="termShow">
+        <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
-          <my-terminal ref="termRef" 
+          <my-terminal ref="termRef"
             :on-async-key="beforeOnKey"
             @on-change="onChange" 
             @on-submit="onSubmit" :on-async-submit="onAsyncSubmit"
@@ -44,20 +49,26 @@
         </vue-pane>
       </vue-split-pane>
       <!-- context-menu / mouse-stalker -->
-      <context-menu ref="contextRef" :items="sharedObject" v-on:on-click="clickContextMenu"></context-menu>
       <mouse-stalker target="canvas" ref="stalkerRef" ></mouse-stalker>
+      <context-menu ref="contextRef" :items="contextList"></context-menu>
     </div>
     <!-------- logic -------->
     <script type="module">
-      import { sleep, indoc, asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel } from "./js/lib.js"
+      import { 
+        sleep, indoc,
+        asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, 
+        setState,
+        readFile
+      } from "./js/lib.js"
 
-      await asyncCheckWebview();// undefined
+      // await asyncCheckWebview();// undefined
+      // setState({ a: "hoge" });
+      // console.log(window.dummyState)
 
       import { wtermComponent, Wterm } from "./component/wterm.js"
       import { canvasEx } from "./component/canvas-ex.js"
       import { contextmenu } from "./component/context.js"
       import { stalker } from "./component/stalker.js"
-
 
       const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
@@ -71,7 +82,34 @@
         setup() {
           const [termShow, termRef] = [ref(false), ref(null)];
           const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
+          const [testRef] = [ref(null)];
+
+          const [params, zoom, selected, rendering] = [ref({ bitshift :0, color:0 }), ref(null), ref(null), ref(false)];
+          const state = ref({
+            path : "", 
+            subpath: "data.raw"
+          });
+
+          /* to sk */
+          from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${e}`) )
+          from(selected).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
           
+          from(params).subscribe(async e => {
+            const image = await asyncPostPng(e)
+            canvasRef.value.redraw(image);
+          })
+
+          /******** method ********/
+
+          const _readfile = async (path) => {
+            state.value.path = path;
+            await readFile(path, state.value.subpath)
+            params.value = { ...params.value }
+            // const image = await asyncPostPng(params.value)
+            // canvasRef.value.redraw(image);
+            // window.wterm.inputln(`echo ${e.detail.payload}`);
+          };
+
           /******** terminal ********/
 
           const beforeOnKey = async (e) => { return true; }
@@ -86,9 +124,7 @@
                 const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
-              case 'echo':{
-                termRef.value.write(`${e.payload.join(' ')}`);
-              } break;
+              case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
 
               case 'sleep-js':{
                 for (let step = 0; step < 5; step++) {
@@ -98,7 +134,7 @@
                     console.log(step)
                   }
                   await sleep(1000);
-                } 
+                }
               } break;
               case 'sleep-event':{
                 post("sleep", { a : 1, b :2 });
@@ -107,8 +143,11 @@
                 const dst = await asyncPostJson("sleep", ["1"] )
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
-          
-              case 'js-eval':{
+              case 'test':{
+                post("unknown", { a : 1, b : 2 });
+              } return; // termRef.value.prompt();を投げない
+              
+              case 'js1':{
                 let dst = eval(e.payload.join(' '))
                 if(termRef.value){
                   termRef.value.write(`${e.payload.join(' ')} = ${dst}`);
@@ -116,11 +155,11 @@
                   console.log(dst)
                 } 
               } break;
-              case 'py-eval':{
+              case 'py1':{
                 const dst = await asyncPostJson("py1", e.payload.join(' ') )
                 termRef.value.write(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
               } break;
-              case 'py-test':{
+              case 'py-pst':{
                 const dst = await asyncPostJson("py", { 
                   code: indoc(`
                     def main(args):
@@ -136,10 +175,7 @@
                 } );
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
-              case 'ps':{
-                const dst = await asyncPostJson("ps", e.payload);
-                termRef.value.write(`${dst}`);
-              } break;
+
               case 'py':{
                 const code = await asyncGetTxt(`local/${e.payload[0]}`)
                 termRef.value.write(`========code========\r\n`);
@@ -152,16 +188,26 @@
                 } );
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
+              case 'ps':{
+                const dst = await asyncPostJson("ps", e.payload[0]);
+                termRef.value.write(`${dst}`);
+              } break;
 
-              case 'zoom':
-                termRef.value.write(`zoom : ${e.payload}`);
-                canvasRef.value.zoom(e.payload)
-                break;          
+              case 'state':{
+                termRef.value.write(`params : ${JSON.stringify(params.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
+                termRef.value.write(`state : ${JSON.stringify(state.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
+              } break;
+              case 'set':{
+                state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
+              } break;
+
+              case 'zoom':{ zoom.value = e.payload } break;
+                // termRef.value.write(`zoom : ${e.payload}`);
+                // canvasRef.value.zoom(e.payload)
               case 'select':{ } break;
               case 'bitshift':{ } break;
-              case 'test':{
-                post("unknown", { a : 1, b : 2 });
-              } return; // termRef.value.prompt();を投げない
+
+              case 'read': { await _readfile(e.payload[0]); } break;
               default:
                 break;
             }
@@ -174,52 +220,95 @@
             const termprompt$ = fromEvent(window.chrome.webview, 'prompt');
             termprompt$.subscribe(() => { termRef.value.prompt(); });
           }
-          
+
           /******** canvas ********/
-          const onMousemove = async (e, real)=> { 
-            const dst = await asyncPostPixel({ x: real.x, y:real.y});
-            termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
-            stalkerRef.value.intext({ x:real.x, y:real.y})
+          const onMousemove = async (e, real, debounce)=> { 
+            if(debounce) {
+              const dst = await asyncPostPixel({ x: real.x, y:real.y });
+              const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
+              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
+            } else {
+              stalkerRef.value.intext('0', `${real.x} ${real.y}`)
+            }
+            // termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
             e.preventDefault()
           }
-        
+
+          const onDrop = async (e)=> {
+            console.log('newWindowReq', e);
+            switch(e.detail.type){
+              case 'file': { await _readfile(e.detail.payload); } break;
+              case 'http': { } break;
+              default: break;
+            }
+          }
+
+          /* wheel event */
+          const onWheel = async (e) =>{
+            const dst = e.deltaY > 0 ? -1 : 1
+            params.value = {...params.value, bitshift : params.value.bitshift + dst }
+            stalkerRef.value.intext('shift+0', `bitshift : ${params.value.bitshift}`)
+          }
+
           /******** view ********/
           // const isBusy$ = from(busy);
           // isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
 
+          /******** key event / shortcut ********/
 
-          /******** key event ********/
+          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
+          // filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )
+          keydown$.pipe(filter(n => 
+            n.key.startsWith('Arrow')
+            || ['\\', '.'].includes(n.key)
+            || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
+          )).subscribe( async e => {
+            const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
+            console.log(keys)
+            switch(keys){
+              case 'shift+ArrowUp': { params.value = { ...params.value , bitshift: params.value.bitshift + 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowDown': { params.value = { ...params.value , bitshift: params.value.bitshift - 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowRight': { params.value = { ...params.value , color: params.value.color + 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowLeft': { params.value = { ...params.value , color: params.value.color - 1 }; e.preventDefault(); } break;
 
-          const keydown$ = fromEvent(document, 'keydown').pipe(filter(n => n.repeat === false), share());
-          keydown$.pipe(filter(n => !["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey) )).subscribe(async (e) => {
-            switch(`${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`){
+              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
+              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
+
+              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
+              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
+
+              case 'IntlRo': { rendering.value = !rendering.value } break;
+              case '.': { 
+                // const dst = await Wuzei.fetchJson({ type : "get_state" });
+                // console.log(dst);
+              } break;
+
               case "shift+ctrl+BracketLeft": termShow.value = !termShow.value; break;
-              case "alt+KeyZ": // コマンド送信テスト
-                termRef.value.input_insert("___")
-                break;
-              case "alt+KeyX": // コマンド送信テスト
-                termRef.value.input_append("___")
-                break;
-              case "alt+KeyC": // コマンド送信テスト
-              console.log(termRef.value)
+
+              // コマンド送信テスト
+              case "alt+KeyZ": { termRef.value.input_insert("___") } break;
+              case "alt+KeyX": { termRef.value.input_append("___") } break;
+              case "alt+KeyC": { 
                 if(termRef.value){
                   termRef.value.input_overwrite("sleep") /* 隠してるときはコマンド何処から送るの？ */
                 }else{
                   await onSubmit({ type: "sleep" })
                 }
-                break;
-              case "alt+KeyV": // ログテスト
-              console.log(termRef.value)
+              } break;
+              // ログテスト
+              case "alt+KeyV":
+                console.log(termRef.value)
                 if(termRef.value){
                   termRef.value.log("logout")
                 }else{
                   await onSubmit({ type: "sleep" })
                 }
-              default:
-                break;
+              default: {} break;
             }
           });
-          
+
+          /******** mouse event without zoom ********/
+
           /******** contextmenu ********/
           const onContextmenu = (e, n) => {
             if(n.inSelected){
@@ -229,28 +318,19 @@
             }
             e.preventDefault();
           }
-          const clickContextMenu = (e, key) => {
-            switch(key){
-              case 'send_term':
-                termRef.value.input_append(`py scripts/read.py '${JSON.stringify(canvasRef.value.getSelect())}'`)
-                break;
-              default:
-                break;
-            }
-          }
-          const sharedObject = reactive({
+          const contextList = reactive({
             "IN" : [
-              { type : 'div', key :'copy_selected', value: 'Copy Selected' },
-              { type : 'div', key :'send_term', value: 'Send Terminal' },
+              { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true) } },
+              { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(canvasRef.value.getSelect())); } },
+              { type : 'div', value: 'Send Terminal', action: (e)=>{ 
+                termRef.value.input_append(`py scripts/read.py '${JSON.stringify(selected.value)}'`) } },
             ],
             "OUT" : [
-              { type : 'div', key :'copy_full', value: 'Copy Full' },
-              { type : 'div', key :'copy_selected', value: 'Copy Selected' },
-              { type : 'div', key :'selected', value: 'Selected Coordinate' },
+              { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false) } },
               { type : 'hr' }, 
-              { type : 'div', key :'subprocess_csx', value: 'call csx subprocess ' },
-              { type : 'div', key :'subprocess_py', value: 'call py subprocess' },
-              { type : 'div', key :'subprocess_rs', value: 'call rust subprocess' },
+              { type : 'div', value: 'Dummy', action: (e)=>{ console.log('Dummy', e) } },
+              { type : 'div', value: 'call py subprocess' },
+              { type : 'div', value: 'call rust subprocess' },
             ]
           });
 
@@ -258,30 +338,11 @@
           if(window.chrome.webview){
 
             const updated$ = fromEvent(window.chrome.webview, 'updated');
-            updated$.subscribe(async (e) => {
-              console.log('updated', e);
-            });
-
-            const newWindowReq$ = fromEvent(window.chrome.webview, 'newWindowReq');
-            newWindowReq$.subscribe(async (e) => {
-              console.log('newWindowReq', e);
-              // switch(e.detail.type){
-              //   case 'file':
-              //     // path.value = { path : e.detail.payload, script : false };
-              //     window.wterm.inputln(`echo ${e.detail.payload}`);
-              //     break;
-              //   case 'http':
-              //     window.wterm.inputln(`title ${e.detail.payload}`);
-              //     break;
-              //   default:
-              //     break;
-              // }
-            });
+            updated$.subscribe(async (e) => { console.log('updated', e); });
 
             const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
-            namedPipe$.subscribe(e => { 
-              console.log("namedPipe", e)
-            });
+            namedPipe$.subscribe(e => { console.log("namedPipe", e) });
+
           }
           
           /******** onMounted ********/
@@ -289,17 +350,18 @@
             console.log('app mounted')
             termShow.value = true;
 
-            const image = await asyncPostPng({ shift: 0, color: 0 })
+            const image = await asyncPostPng({ bitshift: 0, color: 0 })
             canvasRef.value.redraw(image);
 
             nextTick(() => { console.log('app rendered'); });
           });
           return { 
-            termShow, sharedObject, 
-            onMousemove,
-            onContextmenu, clickContextMenu,
+            termShow, contextList, 
+            onMousemove, onContextmenu, onDrop, onWheel,
             canvasRef, contextRef, stalkerRef,
-            termRef, beforeOnKey, onChange, onSubmit, onAsyncSubmit
+            termRef, beforeOnKey, onChange, onSubmit, onAsyncSubmit,
+            zoom, selected, rendering,
+            testRef
           }
         }
       });
@@ -315,3 +377,8 @@
   </body>
 </html>
 
+<!-- 
+
+
+  
+ -->

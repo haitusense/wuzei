@@ -1,7 +1,7 @@
 //@ts-check
 
 //@ts-ignore
-const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
+const { createApp, ref, nextTick, onMounted, reactive, computed } = window.Vue;
 const { /* from */ /* fromEvent */ of, merge, partition,
   filter, first, delay, map, takeUntil, debounceTime, scan,
   bufferToggle, switchMap, mergeMap,  
@@ -26,6 +26,29 @@ const convertClientToReal = (target, event) => {
   const cnv = target
   const isInCanvas = (0 <= realX && realX < cnv.width && 0 <= realY && realY < cnv.height);
   return { x:realX, y:realY, isIn:isInCanvas };
+}
+
+/**
+ */
+const drawRect = (ref, margin, left, top, right, bottom) => {
+  const ctx = ref.value.getContext("2d");
+  ctx.beginPath();
+  ctx.clearRect(0, 0, ref.value.width, ref.value.height);
+  const width = right - left
+  const height = bottom - top;
+  left = left + margin;
+  top = top + margin;
+
+  if(width > 0 && height > 0){
+    ctx.fillStyle = "rgb(0, 0, 255, 0.2)";
+    ctx.fillRect(left, top, width, height);
+    // console.log(left, top, width, height)
+    ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
+    console.log(left + 0.5, top + 0.5, width - 1, height - 1)
+  }
+  ctx.closePath();
 }
 
 class Rect {
@@ -62,102 +85,94 @@ const styledObj = {
   }
 }
 
-
-  function copyImageToClipboard(canvas, x, y, w, h) {
-    const imageData = canvas.getContext('2d').getImageData(x, y, w, h);
-    const temp = document.createElement('canvas');
-    temp.width = w;
-    temp.height = h;
-    const ctx = temp.getContext('2d');
-    if(ctx == null) return;
-    ctx.putImageData(imageData, 0, 0);
-    temp.toBlob(async (blob) => { 
-      if(blob == null) return;
-      await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
-    }, 'image/png');
-    console.log("clipboard")
-  }
-  
-  // await navigator.clipboard.writeText("このテキストをクリップボードに書き込む");
-
-
 const canvasEx = {
   template: `
-  <div id="canvas" ref="divRef" style="position:absolute; top:0;left:0;right:0;bottom:0;">
-    <canvas ref="canvasRef"
-      :style= "{ ...styled, 
-        left: props.margin*cnvParams.zoomfactor + 'px', 
-        top: props.margin*cnvParams.zoomfactor + 'px', 
-        backgroundColor: 'lightgray', 
-        transform: 'scale(' + cnvParams.zoomfactor + ')', 
-      }"
-      :width="cnvParams.width"
-      :height="cnvParams.height"
-    ></canvas>
-    <canvas ref="selectRef" 
-      :style= "{ ...styled, left: '0px', top:'0px', backgroundColor: 'transparent', transform: 'scale(' + cnvParams.zoomfactor + ')', }"
-      :width="cnvParams.width + props.margin * 2" 
-      :height="cnvParams.height + props.margin * 2"
-    ></canvas>
-  </div>
+    <div id="canvas" ref="divRef" style="position:absolute; top:0;left:0;right:0;bottom:0;">
+      <canvas ref="canvasRef"
+        :style= "{ ...styled, 
+          left: props.margin*cnvParams.zoomfactor + 'px', 
+          top: props.margin*cnvParams.zoomfactor + 'px', 
+          transform: 'scale(' + cnvParams.zoomfactor + ')', 
+          imageRendering: props.rendering
+        }"
+        :width="cnvParams.width"
+        :height="cnvParams.height"
+      ></canvas>
+      <canvas ref="selectRef" 
+        :style= "{ ...styled, left: '0px', top:'0px', backgroundColor: 'transparent', transform: 'scale(' + cnvParams.zoomfactor + ')', }"
+        :width="cnvParams.width + props.margin * 2" 
+        :height="cnvParams.height + props.margin * 2"
+      ></canvas>
+    </div>
   `,
   props: {
     margin: { type: Number, default: 10, required: false },
+    zoom: { type: Number, default: 1, required: false },
+    select: { type: Object, default: { left:0, top:0, right:0, bottom:0 }, required: false },
+    rendering: { type: String, default: 'pixelated', required: false },
   },
   watch: {
 
   },
   methods: {
-    zoom(val){ this.cnvParams = { ...this.cnvParams, zoom: Number(val) } },
-    resize(w,h){  },
     /**
      * @param {any} image
      */
     redraw(image){
       console.log("redraw")
-      const ctx = this.canvasRef.getContext("2d", { alpha: false, willReadFrequently: true, });
-      ctx.drawImage(image, 0, 0);
       this.cnvParams = { ...this.cnvParams, width:image.width, height:image.height }
+      nextTick(()=>{
+        const ctx = this.canvasRef.getContext("2d", { alpha: false, willReadFrequently: true, });
+        ctx.drawImage(image, 0, 0);
+      });
     },
-    setSelect(left,top,width,height){
-      this.selected = {startPos:{ x: left, y: top }, endPos:{ x:left + width, y: top + height }}
-    },
-    getSelect(){
-      return this.selected.get()
+    clip(selectflag){
+      const sel = this.getSelect()
+      const x = selectflag ? sel.left : 0
+      const y = selectflag ? sel.top : 0
+      const w = selectflag ? sel.width : this.canvasRef.width
+      const h = selectflag ? sel.height : this.canvasRef.height
+
+      const imageData = this.canvasRef.getContext('2d').getImageData(x, y, w, h);
+      const temp = document.createElement('canvas');
+      temp.width = w;
+      temp.height = h;
+      const ctx = temp.getContext('2d');
+      if(ctx == null) return;
+      ctx.putImageData(imageData, 0, 0);
+      temp.toBlob(async (blob) => { 
+        if(blob == null) return;
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+      }, 'image/png');
+      console.log("clipboard")
     }
   },
+
   /*
-    emit : on-context, on-move
+    emit : 
+      on-context, on-move, on-drop,
+      update:zoom
+    defineModel : つかわない
   */
   setup(props, { emit }) {
     const styled = ref(styledObj.canvas)
     const [divRef, canvasRef, selectRef] = [ref(null), ref(null), ref(null)];
     const [selected] = [ref(Rect.setPos({x:0,y:0}, {x:0,y:0}))]; // real pos
-    const cnvParams = ref({ width:320, height:240, zoom:0, zoomfactor:1, rendering : false });
+    const cnvParams = ref({ width:320, height:240, zoomfactor:1 });
 
-    from(cnvParams).subscribe((e) => { 
-      e.zoomfactor = 1.2 ** e.zoom;
-      canvasRef.value.style.imageRendering = e.rendering ? "pixelated" : "auto";
-    });
+    const zoom = computed({ get: () => props.zoom, set: (val) => emit("update:zoom", val) });
+    const select = computed({ get: () => props.select, set: (val) => emit("update:select", val) });
+
+    from(zoom).subscribe(e => { cnvParams.value = { ...cnvParams.value, zoomfactor : 1.2 ** e }; });
+    from(select).subscribe(e => { drawRect(selectRef, props.margin, e.left, e.top, e.right, e.bottom) });
+
+    from(cnvParams).subscribe((e) => {  });
     from(selected).subscribe((e) => {
-      const ctx = selectRef.value.getContext("2d");
-      ctx.beginPath();
-      ctx.clearRect(0, 0, selectRef.value.width, selectRef.value.height);
-      let {left, top, width, height} = e.get();
-      left = left + props.margin;
-      top = top + props.margin;
-
-      if(width > 0 && height > 0){
-        ctx.fillStyle = "rgb(0, 0, 255, 0.2)";
-        ctx.fillRect(left, top, width, height);
-        console.log(left, top, width, height)
-        ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
-        ctx.lineWidth = 1;
-        ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
-        console.log(left + 0.5, top + 0.5, width - 1, height - 1)
-      }
-      ctx.closePath();
+      const {left, top, right, bottom} = e.get();
+      select.value = { left, top, right, bottom };
     });
+
+
     /******** mouse event ********/
     const mousemove$ = fromEvent(selectRef, 'mousemove').pipe(map(e => e), share());
     const mousemove_0$ = mousemove$.pipe(filter(e => e.buttons == 0 && !e.altKey && !e.shiftKey && !e.ctrlKey), share());
@@ -165,9 +180,13 @@ const canvasEx = {
     const mousemove_4$ = mousemove$.pipe(filter(e => e.buttons == 4), share());
     const mouseup$ = fromEvent(selectRef, 'mouseup');
 
-    mousemove$.subscribe(e => {
-      // console.log(e)
-      emit('on-mousemove', e, convertClientToReal(canvasRef.value, e))
+    /* move move */
+    mousemove$.pipe(
+      filter(e => e.buttons === 0),
+      tap(e => { emit('on-mousemove', e, convertClientToReal(canvasRef.value, e), false) }),
+      debounceTime(120)
+    ).subscribe(e => {
+      emit('on-mousemove', e, convertClientToReal(canvasRef.value, e), true)
     });
 
     /* move with left click in canvas */
@@ -183,7 +202,7 @@ const canvasEx = {
         tap(end => { 
           // stalkerRef.value.show({unModified : `(${e.end.realX},${e.end.realY})`})
           selected.value = Rect.setPos(start, end)
-       }),
+        }),
         takeUntil(mouseup$),
       ))
     );
@@ -191,14 +210,70 @@ const canvasEx = {
 
 
     /*** wheel event ***/
-    const mousewheel$ = fromEvent(selectRef, 'wheel').pipe(tap(ev => { /* ev.preventDefault() */ } ), share());
-
-    /* alt event */
-    mousewheel$.pipe(filter(e=> !e.shiftKey && !e.ctrlKey && e.altKey)).subscribe((e) => {
-      cnvParams.value = { ...cnvParams.value, zoom : cnvParams.value.zoom + (e.deltaY > 0 ? -1 : 1)};
+    const mousewheel$ = fromEvent(divRef, 'wheel').pipe(tap(ev => { /* ev.preventDefault() */ } ));
+    
+    mousewheel$.pipe(filter(e=> e.shiftKey && !e.ctrlKey && !e.altKey)).subscribe((e) => {
+      emit('on-wheel', e)
       e.preventDefault();
     });
 
+    // canvasRef.value.style.imageRendering = e.rendering ? "pixelated" : "auto";
+
+    /* shift event : default 横スクロール -> disable */
+    // const [wheelShiftIsBusy$, wheelShiftIsNotBusy$] = partition(mousewheel$.pipe(
+    //   filter(e => e.shiftKey && !e.ctrlKey && !e.altKey),
+    //   tap(e => e.preventDefault() )
+    // ), _ => busy.value);
+    // wheelShiftIsNotBusy$.subscribe(e => {
+    //   if(e.deltaY != 0){
+    //     rawParams.value = {...rawParams.value, bitshift : rawParams.value.bitshift + (e.deltaY > 0 ? -1 : 1) }
+    //   }
+    // });
+    // wheelShiftIsBusy$.pipe(bufferToggle(isBusy$, ()=>isBusy$ ),filter(e => e.length > 0)).subscribe(e => {
+    //   const dst = e.reduce((acc, curr) => acc + (curr.deltaY > 0 ? -1 :1), rawParams.value.bitshift)
+    //   rawParams.value = {...rawParams.value, bitshift : dst }
+    // });
+
+    /* zoom event */
+    mousewheel$.pipe(filter(e=> e.shiftKey && e.ctrlKey && !e.altKey)).subscribe((e) => {
+      zoom.value = zoom.value + (e.deltaY > 0 ? -1 : 1);
+      e.preventDefault();
+    });
+    
+    /* drop */
+    fromEvent(divRef, 'dragenter').subscribe(e => {
+      e.preventDefault();
+      canvasRef.value.style.opacity = 0.65
+    });
+    fromEvent(divRef, 'dragleave').subscribe(e => {
+      e.preventDefault();
+      if (!e.currentTarget.contains(e.relatedTarget)) {
+        canvasRef.value.style.opacity = 1
+      }
+    });
+    fromEvent(divRef, 'dragover').subscribe(e => {
+      e.stopPropagation();
+      e.preventDefault();
+    });
+
+    // drop -> newWindowReqの順
+    //@ts-ignore
+    if(window.chrome.webview){
+      fromEvent(divRef, 'drop').pipe(
+        //@ts-ignore
+        switchMap((e) => merge( of(e).pipe(delay(100)), fromEvent(window.chrome.webview, 'newWindowReq')).pipe(first()) )
+      ).subscribe(e => {
+        emit('on-drop', e)
+      })
+    }else{
+      fromEvent(divRef, 'drop').subscribe(async e => {
+        e.stopPropagation(); // 親への伝播をとめる
+        e.preventDefault();  //イベントのキャンセル
+        const file = e.dataTransfer.files[0].name;
+        console.log(file)
+      })
+    }
+    
     /* contextmenu */
     fromEvent(divRef, 'contextmenu').subscribe( e => { 
       const real = convertClientToReal(canvasRef.value, e);
@@ -225,7 +300,7 @@ const canvasEx = {
       props, 
       cnvParams,
       divRef, canvasRef, selectRef, styled,
-      selected
+      selected,
     }
   }
 }

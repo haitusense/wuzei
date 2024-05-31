@@ -12,8 +12,8 @@ const contextmenu = {
       class="contextmenu"
       style="position: absolute;" 
       :style="{ left: left, top: top, display: display }" >
-      <template v-for="{type, key, value} in contextitems">
-        <div v-if="type === 'div'" @click="onClickMenu($event,key)" >{{ value }}</div>
+      <template v-for="{type, value, action} in contextitems">
+        <div v-if="type === 'div'" @click="onClickMenu($event, action)" >{{ value }}</div>
         <hr v-if="type === 'hr'">
       </template>
     </div>
@@ -44,8 +44,9 @@ const contextmenu = {
       }
     });
     // click inside / @click="$emit('callback', key)"から変更
-    const onClickMenu = (e, key) => {
-      emit("on-click", e, key);
+    const onClickMenu = (e, action) => {
+      // emit("on-click", e, key);
+      if(action) { action(e) }
       display.value = "none";
     }
 
