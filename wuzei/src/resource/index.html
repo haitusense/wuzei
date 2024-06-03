@@ -84,17 +84,24 @@
           const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
           const [testRef] = [ref(null)];
 
-          const [params, zoom, selected, rendering] = [ref({ bitshift :0, color:0 }), ref(null), ref(null), ref(false)];
-          const state = ref({
-            path : "", 
-            subpath: "data.raw"
+          const rawState = ref({ 
+            bitshift :0, 
+            color:0,
+            LUT: "",
+            offset: ""
           });
+          const otherState = ref({
+            path : "", 
+            subpath: "data.raw",
+          });
+          const [zoom, selected, rendering] = [ref(null), ref(null), ref(true)];
 
           /* to sk */
-          from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${e}`) )
+          from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
           from(selected).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
-          
-          from(params).subscribe(async e => {
+
+          from(rawState).subscribe(async e => {
+            stalkerRef.value.intext('shift+0', `bitshift : ${e.bitshift}\r\ncolor : ${e.color}`)
             const image = await asyncPostPng(e)
             canvasRef.value.redraw(image);
           })
@@ -102,10 +109,10 @@
           /******** method ********/
 
           const _readfile = async (path) => {
-            state.value.path = path;
-            await readFile(path, state.value.subpath)
-            params.value = { ...params.value }
-            // const image = await asyncPostPng(params.value)
+            otherState.value.path = path;
+            await readFile(path, otherState.value.subpath)
+            rawState.value = { ...rawState.value }
+            // const image = await asyncPostPng(rawState.value)
             // canvasRef.value.redraw(image);
             // window.wterm.inputln(`echo ${e.detail.payload}`);
           };
@@ -194,21 +201,27 @@
               } break;
 
               case 'state':{
-                termRef.value.write(`params : ${JSON.stringify(params.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
-                termRef.value.write(`state : ${JSON.stringify(state.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
+                termRef.value.write(`rawState : ${JSON.stringify(rawState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
+                termRef.value.write(`otherState : ${JSON.stringify(otherState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
               } break;
               case 'set':{
-                state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
+                otherState.value = { ...otherState.value, [e.payload[0]] : e.payload[1] }
               } break;
 
-              case 'zoom':{ zoom.value = e.payload } break;
-                // termRef.value.write(`zoom : ${e.payload}`);
-                // canvasRef.value.zoom(e.payload)
-              case 'select':{ } break;
-              case 'bitshift':{ } break;
+              case 'select':{ selected.value = {
+                left: Number(e.payload[0]), 
+                top: Number(e.payload[1]),
+                right: Number(e.payload[2]),
+                bottom:Number(e.payload[3])
+              } } break;
+              case 'zoom':{ zoom.value = Number(e.payload[0]) } break;
+              case 'bitshift':{ rawState.value = {...rawState.value, bitshift: Number(e.payload[0])} } break;
+              case 'color':{ rawState.value = {...rawState.value, color: Number(e.payload[0])} } break;
 
               case 'read': { await _readfile(e.payload[0]); } break;
               default:
+                // termRef.value.write(`zoom : ${e.payload}`);
+                // canvasRef.value.zoom(e.payload)
                 break;
             }
             termRef.value.prompt(); // 自分でprompt必要
@@ -221,34 +234,7 @@
             termprompt$.subscribe(() => { termRef.value.prompt(); });
           }
 
-          /******** canvas ********/
-          const onMousemove = async (e, real, debounce)=> { 
-            if(debounce) {
-              const dst = await asyncPostPixel({ x: real.x, y:real.y });
-              const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
-              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
-            } else {
-              stalkerRef.value.intext('0', `${real.x} ${real.y}`)
-            }
-            // termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
-            e.preventDefault()
-          }
 
-          const onDrop = async (e)=> {
-            console.log('newWindowReq', e);
-            switch(e.detail.type){
-              case 'file': { await _readfile(e.detail.payload); } break;
-              case 'http': { } break;
-              default: break;
-            }
-          }
-
-          /* wheel event */
-          const onWheel = async (e) =>{
-            const dst = e.deltaY > 0 ? -1 : 1
-            params.value = {...params.value, bitshift : params.value.bitshift + dst }
-            stalkerRef.value.intext('shift+0', `bitshift : ${params.value.bitshift}`)
-          }
 
           /******** view ********/
           // const isBusy$ = from(busy);
@@ -266,10 +252,10 @@
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
             console.log(keys)
             switch(keys){
-              case 'shift+ArrowUp': { params.value = { ...params.value , bitshift: params.value.bitshift + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowDown': { params.value = { ...params.value , bitshift: params.value.bitshift - 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowRight': { params.value = { ...params.value , color: params.value.color + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowLeft': { params.value = { ...params.value , color: params.value.color - 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowUp': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift + 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowDown': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift - 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowRight': { rawState.value = { ...rawState.value , color: rawState.value.color + 1 }; e.preventDefault(); } break;
+              case 'shift+ArrowLeft': { rawState.value = { ...rawState.value , color: rawState.value.color - 1 }; e.preventDefault(); } break;
 
               case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
               case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
@@ -278,12 +264,8 @@
               case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
 
               case 'IntlRo': { rendering.value = !rendering.value } break;
-              case '.': { 
-                // const dst = await Wuzei.fetchJson({ type : "get_state" });
-                // console.log(dst);
-              } break;
 
-              case "shift+ctrl+BracketLeft": termShow.value = !termShow.value; break;
+              case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; }break;
 
               // コマンド送信テスト
               case "alt+KeyZ": { termRef.value.input_insert("___") } break;
@@ -307,7 +289,34 @@
             }
           });
 
-          /******** mouse event without zoom ********/
+          /******** mouse event without canvas ********/
+
+          /******** mouse event in canvas ********/
+          const onMousemove = async (e, real, debounce)=> { 
+            if(debounce) {
+              const dst = await asyncPostPixel({ x: real.x, y:real.y });
+              const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
+              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
+            } else {
+              stalkerRef.value.intext('0', `${real.x} ${real.y}`)
+            }
+            // termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
+            e.preventDefault()
+          }
+
+          const onDrop = async (e)=> {
+            console.log('newWindowReq', e);
+            switch(e.detail.type){
+              case 'file': { await _readfile(e.detail.payload); } break;
+              case 'http': { } break;
+              default: break;
+            }
+          }
+
+          const onWheel = async (e) =>{ 
+            const dst = e.deltaY > 0 ? -1 : 1
+            rawState.value = {...rawState.value, bitshift : rawState.value.bitshift + dst } 
+          }
 
           /******** contextmenu ********/
           const onContextmenu = (e, n) => {
@@ -320,17 +329,47 @@
           }
           const contextList = reactive({
             "IN" : [
-              { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true) } },
+              { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true); } },
               { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(canvasRef.value.getSelect())); } },
-              { type : 'div', value: 'Send Terminal', action: (e)=>{ 
-                termRef.value.input_append(`py scripts/read.py '${JSON.stringify(selected.value)}'`) } },
+              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ termRef.value.input_append(`'${JSON.stringify(selected.value)}'`)  } },
+              { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ termRef.value.input_insert(`'${JSON.stringify(selected.value)}'`) } },
+              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ termRef.value.input_insert(`py scripts/script.py '${JSON.stringify(selected.value)}'`) } },
+              { type : 'hr' }, 
+              { type : 'div', value: 'Send stat.py To Terminal', action: (e)=>{ 
+                termRef.value.input_overwrite(`py scripts/stat.py '${JSON.stringify(selected.value)}'`) 
+              } },
+              { type : 'div', value: 'Send hist.py To Terminal', action: (e)=>{ 
+                termRef.value.input_overwrite(`py scripts/hist.py '${JSON.stringify(selected.value)}'`) 
+              } },
             ],
             "OUT" : [
-              { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false) } },
-              { type : 'hr' }, 
+              { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false); } },
+            //   { type : 'div', value: 'Copy Full 2', action: async (e)=>{ 
+            //     const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            //     const canvas = document.createElement('canvas');
+            //     const ctx = canvas.getContext('2d');
+            //     const video = document.createElement('video');
+            //     video.srcObject = mediaStream;
+            //     video.play();
+            //     video.onloadedmetadata = () => {
+            //       canvas.width = video.videoWidth;
+            //       canvas.height = video.videoHeight;
+            //       ctx.drawImage(video, 0, 0);
+            //       video.pause();
+            //       canvas.toBlob(blob => {
+            //         navigator.clipboard.write([
+            //           new ClipboardItem({
+            //             'image/png': blob
+            //           })
+            //         ]).then(() => {
+            //           console.log('スクリーンショットをクリップボードにコピーしました。');
+            //         }).catch(err => {
+            //           console.error('クリップボードへのコピーに失敗しました: ', err);
+            //         });
+            //       }, 'image/png');
+            //     };
+            // } },
               { type : 'div', value: 'Dummy', action: (e)=>{ console.log('Dummy', e) } },
-              { type : 'div', value: 'call py subprocess' },
-              { type : 'div', value: 'call rust subprocess' },
             ]
           });
 
@@ -348,10 +387,10 @@
           /******** onMounted ********/
           onMounted(async () => {
             console.log('app mounted')
-            termShow.value = true;
 
-            const image = await asyncPostPng({ bitshift: 0, color: 0 })
-            canvasRef.value.redraw(image);
+            termShow.value = true;
+            zoom.value = 0;
+            rawState.value = { ...rawState.value };
 
             nextTick(() => { console.log('app rendered'); });
           });
@@ -376,9 +415,3 @@
     </script>
   </body>
 </html>
-
-<!-- 
-
-
-  
- -->

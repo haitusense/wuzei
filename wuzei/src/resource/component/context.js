@@ -46,8 +46,13 @@ const contextmenu = {
     // click inside / @click="$emit('callback', key)"から変更
     const onClickMenu = (e, action) => {
       // emit("on-click", e, key);
-      if(action) { action(e) }
-      display.value = "none";
+      try {
+        if(action) { action(e) }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        display.value = "none";
+      }
     }
 
     return { props, left, top, display, contextitems, onClickMenu }

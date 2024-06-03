@@ -1,6 +1,4 @@
-
-例外、ctrl+cの動作
-## 0.1.3 (2024--)
+## 0.1.3 (2024-06-03)
 - update : wry & tao version
 - fix : F5 reload (event_loop-init)
 - add : hraw scripting

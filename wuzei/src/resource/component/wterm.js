@@ -91,7 +91,7 @@ function syntaxHighlighting(src){
 }
 
 function onKeySendWithIpc(e){
-    // isTrustedしか流れないのでobject再構成
+  // isTrustedしか流れないのでobject再構成
   window.ipc.postMessage(JSON.stringify({ 
     type: "test", 
     payload: {
@@ -194,9 +194,7 @@ class Wterm {
       fontSize: 12,
       fontFamily: "Consolas, 'Courier New', monospace",
       RendererType: 'canvas',
-      theme: {
-        // foreground: 'yellow',
-      }
+      theme: { /* foreground: 'yellow', */ }
     });
     this.#fitAddon = new window.FitAddon.FitAddon()
     this.#terminal.loadAddon(this.#fitAddon);
@@ -208,7 +206,6 @@ class Wterm {
     this.#terminal.onKey(async e => { await this.#onKey(e) })
     // this.#terminal.onData(e => { });
     // this.#terminal.onCursorMove(e => { console.log("onCursorMove ", this.#terminal.buffer) });
-
   }
 
   open(id) {
@@ -296,12 +293,10 @@ class Wterm {
       case 'Delete': this.#current_line = this.#current_line.overwrite('', this.#pos); break;
       case 'Backspace': this.#pos -= 1; this.#current_line = this.#current_line.overwrite('', this.#pos); break;
       case 'ctrl+v':
-        navigator.clipboard.writeText(this.#terminal.getSelection())
-        console.log("ctrl+c", this.#terminal.getSelection())
+        this.paste();
         break;
       case 'ctrl+c':
         navigator.clipboard.writeText(this.#terminal.getSelection())
-        console.log("ctrl+c", this.#terminal.getSelection())
         break;
       case 'ctrl+l': this.clear(); break;
       default:
@@ -442,10 +437,6 @@ const wtermComponent = {
         drop(file)
       })
     }
-
-
-
-    
 
     /******** onMounted ********/
     onMounted(() => {
