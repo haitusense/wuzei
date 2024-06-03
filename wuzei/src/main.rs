@@ -1,21 +1,12 @@
 #![windows_subsystem = "windows"] // CLIを表示しない（アタッチされないので標準出力は出ない）
 mod logic;
-use logic::*;
 
 use clap::Parser;
 use serde::{Serialize, Deserialize};
 use anyhow::Context;
 use colored::*;
 use include_dir::{include_dir, Dir};
-use huazhi::wry::{
-  application::{
-    event_loop::{ControlFlow, EventLoopBuilder},
-    window::WindowBuilder,
-  },
-  webview::WebViewBuilder,
-};
 use huazhi::{HuazhiDir, HuazhiBuilder};
-use serde_json::json;
 
 #[derive(clap::ValueEnum, Serialize, Deserialize, Clone, Debug)]
 enum ConsoleType {
@@ -35,7 +26,7 @@ struct Args {
   #[arg(short, long)]
   start_url: Option<String>,
 
-  #[arg(short, long, default_value=r#"[]"#)]
+  #[arg(short, long, default_value=r#"["app.js"]"#)]
   register_javascript: String,
 
   #[arg(short, long, default_value="wuzeiNamedPipe")]
@@ -63,7 +54,7 @@ impl Args {
       Some(ConsoleType::AllocConsole) => unsafe { huazhi::console::alloc_console(); },
       Some(ConsoleType::AttachConsole) => unsafe { huazhi::console::attach_console(); },
       _=>{ }
-    };    
+    };
 
     args
   }
@@ -72,70 +63,62 @@ impl Args {
 
 /* read resource */
 
+static APPNAME: &str = "wuzei";
 static RESOURCE: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/resource");
 
 use std::sync::Mutex;
+
 static ARGS: std::sync::OnceLock<Mutex<Args>> = std::sync::OnceLock::new();
-fn get_args() -> &'static Mutex<Args> {
-  ARGS.get_or_init(|| Mutex::new(Args::parse_with_attach_console()))
-}
-static MMF_HEADER: std::sync::OnceLock<std::sync::Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator>> = std::sync::OnceLock::new();
-fn get_mmf_header() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator> {
-  MMF_HEADER.get_or_init(|| Mutex::new(huazhi::memorymappedfile::MemoryMappedFileCreator::new(format!("{}_header", get_args().lock().unwrap().memorymapped).as_str(), 4096).unwrap()))
-}
-static MMF: std::sync::OnceLock<std::sync::Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator>> = std::sync::OnceLock::new();
-fn get_mmf() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator> {
-  MMF.get_or_init(|| Mutex::new(huazhi::memorymappedfile::MemoryMappedFileCreator::new(get_args().lock().unwrap().memorymapped.as_str(), 320*240*4).unwrap()))
-}
+static PX: std::sync::OnceLock<Mutex<huazhi::tao::event_loop::EventLoopProxy<huazhi::event_handler::UserEvent>>> = std::sync::OnceLock::new();
 
-pub fn mmf_init(width:usize, height:usize){
-  use huazhi::memorymappedfile::*;
+fn get_args() -> &'static Mutex<Args> { ARGS.get_or_init(|| Mutex::new(Args::parse_with_attach_console())) }
 
-  let json = json!({ "width" : width, "height": height });
-  let mut json_str = serde_json::to_string(&json).unwrap();
-  json_str.push('\0');
 
-  let mut mmf_header = get_mmf_header().lock().unwrap();
-  mmf_header.to_accessor().write_array(0, &json_str.as_bytes().to_vec());
-
-  let mut mmf_body = get_mmf().lock().unwrap();
-  mmf_body.resize(width * height * 4).unwrap();
-}
-
-/*
-  StartCause::Initでapp.js読んでるので注意
-*/
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
   let args = get_args().lock().unwrap().clone();
 
   /* setting */
   println!("{}", "set window".blue());
-  let event_loop = EventLoopBuilder::<huazhi::UserEvent>::with_user_event().build();
+  let event_loop = huazhi::tao::event_loop::EventLoopBuilder::<huazhi::event_handler::UserEvent>::with_user_event().build();
+  let proxy_mutex = std::sync::Arc::new(std::sync::Mutex::new(event_loop.create_proxy()));
+  PX.get_or_init(|| Mutex::new(event_loop.create_proxy()));
 
-  mmf_init(320, 240);
-  huazhi::memorymappedfile::mmf_image::init_image(args.memorymapped.as_str());
-
-  let window = WindowBuilder::new()
-    .with_title("wuzei")
+  let window = huazhi::tao::window::WindowBuilder::new()
+    .with_title(APPNAME)
     .with_window_icon(RESOURCE.get_icon("image/icon.png"))
     .build(&event_loop).context("err")?;
 
+  println!("{}", "set mmf".blue());
+  logic::mmf_init(320, 240);
+
+  println!("{}", "set namedpipe".blue());  
+  huazhi::namedpipe::pipe_builder(args.namedpipe, event_loop.create_proxy(), |res| { 
+    if serde_json::from_str::<serde_json::Value>(res).is_ok() {
+      let hoge = get_args().lock().unwrap().clone();
+      let json = serde_json::to_string(&hoge).unwrap();
+      Some(json)
+    } else { 
+      None
+    }
+  }).unwrap();
+
   /* setting webview */
-  let webview = WebViewBuilder::new(window).context("err")?
+  let webview = huazhi::wry::WebViewBuilder::new(&window)
     .with_devtools(true)
     .with_hotkeys_zoom(true)
     .resist_javascript(RESOURCE.get_contents_from_json(args.register_javascript.as_str()))
     .resist_handler(&event_loop)
-    .resist_navigate("wuzei", args.working_dir, args.start_url).context("err")?
-    .resist_pipe_handler(&event_loop, args.namedpipe.as_str())
-    .with_asynchronous_custom_protocol("wuzei".into(), move |request: huazhi::wry::http::Request<Vec<u8>>, responder| {
+    .resist_navigate(APPNAME, args.working_dir, args.start_url).context("err")?
+    .with_asynchronous_custom_protocol(APPNAME.into(), move |request: huazhi::wry::http::Request<Vec<u8>>, responder| {
+      use logic::custom_protocol::*;
+      let proxy_mutex_clone = proxy_mutex.clone();
       tokio::spawn(async move {
         let res = match request.uri().path() {
-          n if n.starts_with("/resource") => huazhi::async_custom_protocol_resource(&RESOURCE, n.trim_start_matches("/resource/")).await,
-          n if n.starts_with("/local") => huazhi::async_custom_protocol_local(n.trim_start_matches("/local/")).await,
-          "/data" => logic::async_custom_protocol_data(request).await,
-          _=> huazhi::async_custom_protocol_err(request.uri().path()).await  
+          n if n.starts_with("/resource") => huazhi::custom_protocol::async_custom_protocol_resource(&RESOURCE, n.trim_start_matches("/resource/")).await,
+          n if n.starts_with("/local") => huazhi::custom_protocol::async_custom_protocol_local(n.trim_start_matches("/local/")).await,
+          "/api" => async_custom_protocol_api(request, proxy_mutex_clone).await,
+          _=> huazhi::custom_protocol::async_custom_protocol_err(request.uri().path()).await
         };
         responder.respond(res);
       });
@@ -144,10 +127,12 @@ async fn main() -> anyhow::Result<()> {
 
   /* setting event_loop */
   println!("{}", "run event_loop".blue());
+  let mut state: logic::event_handler::State = logic::event_handler::State::default();
   event_loop.run(move |event, _, control_flow| {
-    *control_flow = ControlFlow::Wait;
-    event_handler(&webview, event, control_flow);
+    *control_flow = huazhi::tao::event_loop::ControlFlow::Wait;
+    huazhi::event_handler::event_handler(&webview, &window, event, control_flow, |e| {
+      logic::event_handler::reducer(&mut state, e)
+    });
   });
 
 }
-

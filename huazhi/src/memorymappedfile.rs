@@ -1,4 +1,4 @@
-use std::io::{Read, BufRead};
+use std::io::BufRead; //Read, 
 use crate::debug;
 // use std::ops::Index;
 
@@ -41,7 +41,7 @@ mod native {
     ) as MemoryMappedFileHandle
   }
 
-  pub unsafe fn open_file_mapping(path:&str) -> MemoryMappedFileHandle {
+  pub unsafe fn _open_file_mapping(path:&str) -> MemoryMappedFileHandle {
     winapi::um::memoryapi::OpenFileMappingW(
       winapi::um::memoryapi::FILE_MAP_ALL_ACCESS,
       0, 
@@ -53,7 +53,7 @@ mod native {
 
 
 pub struct MemoryMappedFileCreator {
-  path : String,
+  json : String,
 	handle: MemoryMappedFileHandle,
 }
 unsafe impl Send for MemoryMappedFileCreator {}
@@ -61,45 +61,67 @@ unsafe impl Sync for MemoryMappedFileCreator {}
 impl MemoryMappedFileCreator {
 
   /* create */
-  pub fn new(path:&str, size:usize) -> anyhow::Result<MemoryMappedFileCreator> {
-    let handle = unsafe { native::create_file_mapping(path, size) };
+  pub fn new(json:&str) -> anyhow::Result<MemoryMappedFileCreator> {
+    let value : serde_json::Value = serde_json::from_str(json)?;
+    let path = serde_json::from_value::<String>(value["path"].clone())?;
+    let size = serde_json::from_value::<usize>(value["size"].clone())?;
+
+    let handle = unsafe { native::create_file_mapping(path.as_str(), size) };
     if handle.is_null() { anyhow::bail!("cannt create mmf {:?} {} {}", handle, &path, size); };
-    debug!("mmf new {:?} {} {}", handle, path, size);
-    Ok(MemoryMappedFileCreator { path: path.to_string(), handle })
-  }
-  
-  /* open */
-  pub fn open(path:&str) -> anyhow::Result<MemoryMappedFileCreator> {
-    let handle = unsafe { native::open_file_mapping(path) };
-    if handle.is_null() { anyhow::bail!("cannt open mmf {:?} {}", handle, &path); }
-    debug!("mmf open {:?} {}", handle, path);
-    Ok(MemoryMappedFileCreator { path: path.to_string(), handle })
+    debug!("mmf new {:?} {}", handle, value);
+    
+    Ok(MemoryMappedFileCreator { json: json.to_string(), handle })
   }
 
+  /* open */
+  // pub fn open(&self) -> anyhow::Result<MemoryMappedFileCreator> {
+  //   // let value : serde_json::Value = serde_json::from_str(&self.json).unwrap();
+  //   // let path = serde_json::from_value::<String>(value["path"].clone()).unwrap();
+
+  //   // let handle = unsafe { native::open_file_mapping(path.as_str()) };
+  //   // if handle.is_null() { anyhow::bail!("cannt open mmf {:?} {}", handle, &path); }
+  //   // debug!("mmf open {:?} {}", handle, path);
+  //   MemoryMappedFileAccessor::new(self).unwrap()
+  //   Ok(MemoryMappedFileCreator { path: path.to_string(), handle })
+  // }
+
   /* resize */
-  pub fn resize(&mut self, size:usize) -> anyhow::Result<()> {
+  pub fn resize(&mut self, json:&str) -> anyhow::Result<()> {
     debug!("mmf close {:?}", self.handle);
     unsafe { winapi::um::handleapi::CloseHandle(self.handle); }
-    let handle = unsafe { native::create_file_mapping(&self.path, size) };
-    if handle.is_null() { anyhow::bail!("cannt resize mmf {:?} {} {}", handle, &self.path, size); }
+
+    let value : serde_json::Value = serde_json::from_str(json)?;
+    let path = serde_json::from_value::<String>(value["path"].clone())?;
+    let size = serde_json::from_value::<usize>(value["size"].clone())?;
+
+    let handle = unsafe { native::create_file_mapping(path.as_str(), size) };
+    if handle.is_null() { anyhow::bail!("cannt resize mmf {:?} {} {}", handle, path.as_str(), size); }
     self.handle = handle;
-    debug!("mmf resize {:?} {} {}", self.handle, self.path, size);
+    self.json = json.to_string();
+    debug!("mmf resize {:?} {}", self.handle, value);
     Ok(())
   }
 
-  pub fn get_path(&self) -> &str{ self.path.as_str() }
-
+  pub fn get_path(&self) -> String {
+    let value : serde_json::Value = serde_json::from_str(&self.json).unwrap();
+    let path = serde_json::from_value::<String>(value["path"].clone()).unwrap();
+    path
+  }
+  pub fn get_value(&self) -> serde_json::Value {
+    let value : serde_json::Value = serde_json::from_str(&self.json).unwrap();
+    value
+  }
 }
 impl Drop for MemoryMappedFileCreator {
 	fn drop(&mut self) {
-    debug!("mmf drop {:?} {}", self.handle, self.path);
+    debug!("mmf drop {:?} {}", self.handle, self.json);
     unsafe { winapi::um::handleapi::CloseHandle(self.handle); }
 	}
 }
 
 
 pub struct MemoryMappedFileAccessor<'a> {
-  mmf: &'a mut MemoryMappedFileCreator,
+  _mmf: &'a mut MemoryMappedFileCreator,
   accessor : *const winapi::ctypes::c_void
 }
 impl<'a> MemoryMappedFileAccessor<'a> {
@@ -112,7 +134,7 @@ impl<'a> MemoryMappedFileAccessor<'a> {
     };
     if accessor.is_null() { anyhow::bail!("cannt access mmf"); }
     debug!("accessor new {:?}", accessor);
-    Ok(MemoryMappedFileAccessor { mmf, accessor })
+    Ok(MemoryMappedFileAccessor { _mmf: mmf, accessor })
   }
   
   pub fn info(&self) {
@@ -232,7 +254,7 @@ pub trait ReadWrite {
   fn read_string(&self) -> String;
   fn read_json(&self) -> serde_json::Value;
   fn write_string(&self, src:&str);
-  fn write_json_auto(&mut self, value:serde_json::Value) -> anyhow::Result<()>;
+  // fn write_json_auto(&mut self, value:serde_json::Value) -> anyhow::Result<()>;
 
   fn to_stream(&self) -> std::io::BufWriter<std::io::Cursor<&mut [u8]>>;
 }
@@ -291,15 +313,15 @@ impl<'a> ReadWrite for MemoryMappedFileAccessor<'a> {
     unsafe { std::ptr::copy(format!("{src}\0").as_ptr(), ptr, src.len() + 1); }
   }
 
-  fn write_json_auto(&mut self, value:serde_json::Value) -> anyhow::Result<()> {
-    let mut json_str = serde_json::to_string(&value).unwrap();
-    json_str.push('\0');
-    if json_str.len() > self.len() {
-      self.mmf.resize(json_str.len())?;
-    }
-    self.write_string(json_str.as_str());
-    Ok(())
-  }
+  // fn write_json_auto(&mut self, value:serde_json::Value) -> anyhow::Result<()> {
+  //   let mut json_str = serde_json::to_string(&value).unwrap();
+  //   json_str.push('\0');
+  //   if json_str.len() > self.len() {
+  //     self.mmf.resize(json_str.len())?;
+  //   }
+  //   self.write_string(json_str.as_str());
+  //   Ok(())
+  // }
 
   /*
     zipの読み書き用 ptr -> from_raw_parts -> std::io::Cursor -> BufReader 流し込み。
@@ -323,50 +345,50 @@ impl<'a> ReadWrite for MemoryMappedFileAccessor<'a> {
 
 /******** functions with closure ********/
 // to_accessorつくっちゃったってdorpあるので正直いらない
-pub fn using_create_mmf<T, F: FnMut(&MemoryMappedFileAccessor) -> anyhow::Result<T>>(path:&str, size:usize, mut f: F) -> anyhow::Result<T> {
-  let mut mmf = MemoryMappedFileCreator::new(path, size)?;
-  let acc = MemoryMappedFileAccessor::new(&mut mmf)?;
-  let dst = f(&acc);
-  drop(acc);
-  drop(mmf);
-  dst
-}
+// pub fn using_create_mmf<T, F: FnMut(&MemoryMappedFileAccessor) -> anyhow::Result<T>>(path:&str, size:usize, mut f: F) -> anyhow::Result<T> {
+//   let mut mmf = MemoryMappedFileCreator::new(path, size)?;
+//   let acc = MemoryMappedFileAccessor::new(&mut mmf)?;
+//   let dst = f(&acc);
+//   drop(acc);
+//   drop(mmf);
+//   dst
+// }
 
 
 /******** raw ********/
 
-pub fn read<T: Copy>(path: &str, pos: usize) -> anyhow::Result<T> {
-  let mut mmf = MemoryMappedFileCreator::open(path)?;
-  let acc = mmf.to_accessor();
-  Ok(acc.read::<T>(pos).ok_or(anyhow::anyhow!("Value is None"))?)
-}
+// pub fn read<T: Copy>(path: &str, pos: usize) -> anyhow::Result<T> {
+//   let mut mmf = MemoryMappedFileCreator::open(path)?;
+//   let acc = mmf.to_accessor();
+//   Ok(acc.read::<T>(pos).ok_or(anyhow::anyhow!("Value is None"))?)
+// }
 
-pub fn read_array<T: Copy>(path: &str, pos: usize, dst: &mut Vec<T>) -> anyhow::Result<()> {
-  let mut mmf = MemoryMappedFileCreator::open(path)?;
-  let acc = mmf.to_accessor();
-  acc.read_array(pos, dst);
-  Ok(())
-}
+// pub fn read_array<T: Copy>(path: &str, pos: usize, dst: &mut Vec<T>) -> anyhow::Result<()> {
+//   let mut mmf = MemoryMappedFileCreator::open(path)?;
+//   let acc = mmf.to_accessor();
+//   acc.read_array(pos, dst);
+//   Ok(())
+// }
 
-pub fn write<T: Copy>(path: &str, pos: usize, val: T) -> anyhow::Result<()> {
-  let mut mmf = MemoryMappedFileCreator::open(path)?;
-  let acc = mmf.to_accessor();
-  acc.write(pos, val);
-  Ok(())
-}
+// pub fn write<T: Copy>(path: &str, pos: usize, val: T) -> anyhow::Result<()> {
+//   let mut mmf = MemoryMappedFileCreator::open(path)?;
+//   let acc = mmf.to_accessor();
+//   acc.write(pos, val);
+//   Ok(())
+// }
 
-pub fn write_array<T: Copy>(path: &str, pos: usize, src: &Vec<T>) -> anyhow::Result<()> {
-  let mut mmf = MemoryMappedFileCreator::open(path)?;
-  let acc = mmf.to_accessor();
-  acc.write_array(pos, src);
-  Ok(())
-}
+// pub fn write_array<T: Copy>(path: &str, pos: usize, src: &Vec<T>) -> anyhow::Result<()> {
+//   let mut mmf = MemoryMappedFileCreator::open(path)?;
+//   let acc = mmf.to_accessor();
+//   acc.write_array(pos, src);
+//   Ok(())
+// }
 
-pub fn read_json(path: &str) -> anyhow::Result<serde_json::Value> {
-  let mut mmf = MemoryMappedFileCreator::open(path)?;
-  let acc = mmf.to_accessor();
-  Ok(acc.read_json())
-}
+// pub fn read_json(path: &str) -> anyhow::Result<serde_json::Value> {
+//   let mut mmf = MemoryMappedFileCreator::open(path)?;
+//   let acc = mmf.to_accessor();
+//   Ok(acc.read_json())
+// }
 
 
 
@@ -451,26 +473,23 @@ mod experimental {
 
 /******** from file ********/
 
-pub fn write_array_from_file(path: &str, file_path: &str) -> anyhow::Result<()> {
-  let mut file = std::fs::File::open(file_path)?;
-  let mut buffer = Vec::new();
-  let _n = file.read_to_end(&mut buffer)?;
-  write_array(path, 0, &buffer)
-}
+// pub fn write_array_from_file(path: &str, file_path: &str) -> anyhow::Result<()> {
+//   let mut file = std::fs::File::open(file_path)?;
+//   let mut buffer = Vec::new();
+//   let _n = file.read_to_end(&mut buffer)?;
+//   write_array(path, 0, &buffer)
+// }
 
-pub mod mmf_image {
+// pub mod mmf_image {
 
-  pub fn init_image(path:&str) {
-    let json = crate::memorymappedfile::read_json(format!("{path}_header").as_str()).unwrap();
-    let width = json["width"].as_u64().unwrap() as usize;
-    let height = json["height"].as_u64().unwrap() as usize;
-    let mut src = vec![0i32; width*height];
-    for y in 0..height {
-      for x in 0..width {
-        src[x + y * width] = x as i32;
-      }
-    }
-    crate::memorymappedfile::write_array(path, 0, &mut src).unwrap();
-  }
+//   pub fn init_image(path:&str, width:usize, height:usize) {
+//     let mut src = vec![0i32; width*height];
+//     for y in 0..height {
+//       for x in 0..width {
+//         src[x + y * width] = x as i32;
+//       }
+//     }
+//     crate::memorymappedfile::write_array(path, 0, &mut src).unwrap();
+//   }
 
-}
+// }
