@@ -8,7 +8,7 @@ def main(args):
   print('width: {}, height: {}, size: {}'.format(Px.width(), Px.height(), mat.size))
   print(mat)
   print('---selected---')
-  sub_mat = mat[args['top']:args['bottom'], args['left']:(args['right'])]
+  sub_mat = mat[args['top']:args['bottom'], args['left']:args['right']]
   sub_mat1 = sub_mat[0::2, 0::2]
   sub_mat2 = sub_mat[1::2, 0::2]
   sub_mat3 = sub_mat[0::2, 1::2]

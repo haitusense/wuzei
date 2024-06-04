@@ -127,11 +127,11 @@ const canvasEx = {
       });
     },
     clip(selectflag){
-      const sel = this.getSelect()
+      const sel = this.select;
       const x = selectflag ? sel.left : 0
       const y = selectflag ? sel.top : 0
-      const w = selectflag ? sel.width : this.canvasRef.width
-      const h = selectflag ? sel.height : this.canvasRef.height
+      const w = selectflag ? sel.right - sel.left : this.canvasRef.width
+      const h = selectflag ? sel.bottom - sel.top : this.canvasRef.height
 
       const imageData = this.canvasRef.getContext('2d').getImageData(x, y, w, h);
       const temp = document.createElement('canvas');

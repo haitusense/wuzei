@@ -296,9 +296,15 @@ class Wterm {
         this.paste();
         break;
       case 'ctrl+c':
+        console.log(this.#terminal.getSelectionPosition())
+        console.log(this.#terminal.getSelection())
         navigator.clipboard.writeText(this.#terminal.getSelection())
         break;
       case 'ctrl+l': this.clear(); break;
+      case 'shift+ArrowUp': break;
+      case 'shift+ArrowDown': break;
+      case 'shift+ArrowLeft': break;
+      case 'shift+ArrowRight': break;
       default:
         if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey) {
           this.#current_line = this.#current_line.insert(e.key, this.#pos);

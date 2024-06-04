@@ -5,27 +5,37 @@ customizable GUI
 ## Install
 
 ```powershell
-cargo install --git https://github.com/haitusense/wuzei [tool name]
+ps> cargo install --git https://github.com/haitusense/wuzei [tool name]
+```
+
+**when using python for scripting**
+
+```powershell
+ps> winget search Python.Python
+ps> winget install --id Python.Python.3.xx
+
+ps> pip install numpy pandas polars
 ```
 
 **when using rust for scripting**
 
 ```powershell
-cargo install rust-script
+ps> cargo install rust-script
 ```
+
 
 ## Usage
 
 ```powershell
-wuzei.exe --help
+ps> wuzei.exe --help
 ```
 
 ```powershell
-wuzei.exe -c alloc-console
+ps> wuzei.exe -c alloc-console
 ```
 
 **when using a custom GUI**
 
 ```powershell
-wuzei.exe -s index.html
-```
+ps> wuzei.exe -s index.html
+``

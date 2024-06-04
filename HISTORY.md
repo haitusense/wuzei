@@ -1,3 +1,8 @@
+## 0.1.4 (2024-)
+- fix : shortcut, context menu
+starturl拡張
+crip csv
+py exsample
 ## 0.1.3 (2024-06-03)
 - update : wry & tao version
 - fix : F5 reload (event_loop-init)

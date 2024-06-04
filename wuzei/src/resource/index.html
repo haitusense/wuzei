@@ -330,7 +330,7 @@
           const contextList = reactive({
             "IN" : [
               { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true); } },
-              { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(canvasRef.value.getSelect())); } },
+              { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(selected.value)); } },
               { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ termRef.value.input_append(`'${JSON.stringify(selected.value)}'`)  } },
               { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ termRef.value.input_insert(`'${JSON.stringify(selected.value)}'`) } },
               { type : 'div', value: 'Append command to Terminal', action: (e)=>{ termRef.value.input_insert(`py scripts/script.py '${JSON.stringify(selected.value)}'`) } },

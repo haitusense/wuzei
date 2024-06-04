@@ -21,6 +21,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 - hidden topic
   - logic replaced by Rust
   - Using web technologies for presentation layer
+  - Develop simple Raw image format
 
 ## Usage
 
