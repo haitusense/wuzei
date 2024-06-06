@@ -8,8 +8,6 @@ pub mod event_handler;
 pub mod custom_protocol;
 use event_handler::UserEvent;
 
-// mod test;
-
 use colored::*;
 use anyhow::Context as _;
 use serde_json::json;
@@ -91,7 +89,6 @@ impl<'a> HuazhiDir for include_dir::Dir<'a> {
 //   pub type_name: String,
 //   pub payload: serde_json::Value
 // }
-
 
 
 pub trait HuazhiBuilder : Sized {

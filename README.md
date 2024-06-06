@@ -14,7 +14,7 @@ ps> cargo install --git https://github.com/haitusense/wuzei [tool name]
 ps> winget search Python.Python
 ps> winget install --id Python.Python.3.xx
 
-ps> pip install numpy pandas polars
+ps> pip install numpy pandas polars plotnine
 ```
 
 **when using rust for scripting**
@@ -22,7 +22,6 @@ ps> pip install numpy pandas polars
 ```powershell
 ps> cargo install rust-script
 ```
-
 
 ## Usage
 

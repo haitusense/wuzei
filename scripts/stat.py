@@ -1,5 +1,5 @@
 import numpy as np
-import matplotlib.pyplot as plt
+
 def main(args):
   Px = Pixel #type: ignore
   print('args   :', args)

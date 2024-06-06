@@ -4,6 +4,10 @@ use std::process::Stdio;
 use tokio_util::codec::*;
 use futures::prelude::*;
 use std::str::FromStr;
+use numpy::prelude::*;
+use numpy::{PyArray, PyArray2};
+use pyo3::Python;
+use pyo3::Py;
 
 use huazhi::custom_protocol::{response, response_400, ResContent};
 
@@ -195,73 +199,6 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
   Ok(dst)
 }
 
-pub async fn _async_custom_protocol_terminal(request: huazhi::wry::http::Request<Vec<u8>>, mutex: Arc<Mutex<huazhi::tao::event_loop::EventLoopProxy<huazhi::event_handler::UserEvent>>>) -> huazhi::wry::http::Response<Vec<u8>> {
-  println!("{} {:?}", "custom protocol".on_green() , request.uri().path());
-  let body = String::from_utf8(request.body().to_owned()).unwrap();
-  let value: serde_json::Value = serde_json::from_str(body.as_str()).unwrap();
-  let type_name : String = serde_json::from_value(value["type"].clone()).unwrap_or("".to_string());
-  let args : Vec<String> = serde_json::from_value(value["payload"].clone()).unwrap();
-  println!("{} type : {:?} payload : {:?}", "custom protocol".on_green() , type_name.as_str(), args);
-
-  match type_name.as_str() {
-
-    "getpath" => {
-      let path = super::get_mmf().lock().unwrap().get_path();
-      let dst = serde_json::json!({ "state": "successed", "payload": path });
-      response(ResContent::JSON(&dst))
-    },
-    "getvalue" => {
-      let path = super::get_mmf().lock().unwrap().get_value();
-      response(ResContent::JSON(&path))
-    },
-
-    "ps" => {
-      let mut child = tokio::process::Command::new("powershell.exe")
-        .args(&["-NoProfile", "-WindowStyle", "Hidden", "-Command", "chcp 65001;"])
-        .args(args)
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("failed to start sleep");
-
-      let stdout = child.stdout.take().unwrap();
-      let mut reader = FramedRead::new(stdout, MyDecoder);
-
-      while let Some(line) = reader.next().await {
-        let a = line.unwrap();
-        println!("{:?}", a);
-        let _ = mutex.lock().unwrap().send_event(huazhi::event_handler::UserEvent::TerminalMessage(a.clone().replace("\n", "\r\n")));
-      }
-      response(ResContent::TXT("succeeded"))
-    },
-
-    "resize" => {
-
-      // crate::mmf_init(width, height);
-      let mut mmf = super::get_mmf().lock().unwrap();
-      let path = mmf.get_path();
-      let a = value["payload"].as_array().unwrap();
-      let width = a[0].as_i64().unwrap_or(320) as usize;
-      let height = a[1].as_i64().unwrap_or(240) as usize;
-
-      let value = serde_json::json!({
-        "path" : path,
-        "width" : width,
-        "height" : height,
-        "size": width * height * 4
-      });
-      let json = serde_json::to_string(&value).unwrap();
-      mmf.resize(json.as_str()).unwrap();
-
-      response(ResContent::TXT("failed"))
-    },
-    _ => {
-      response_400(ResContent::TXT("unknown"))
-    }
-  }
-
-}
-
-
 struct MyDecoder;
 
 impl Decoder for MyDecoder {
@@ -291,11 +228,6 @@ impl LoggingStdout {
 
 #[pyo3::prelude::pyclass]
 struct Pixel;
-
-use numpy::prelude::*;
-use numpy::{PyArray, PyArray2};
-use pyo3::Python;
-use pyo3::Py;
 
 #[pyo3::prelude::pymethods]
 impl Pixel {
