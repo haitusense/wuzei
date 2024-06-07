@@ -1,9 +1,5 @@
 const { onMounted, onUnmounted, ref } = window.Vue;
-const { /* from */ /* fromEvent */ of, merge, partition,
-  filter, first, delay, map, takeUntil, debounceTime, scan,
-  bufferToggle, switchMap, mergeMap,  
-  share, tap
-} = window.rxjs;
+const { /* from */ /* fromEvent */ of, merge, filter, first, delay, switchMap } = window.rxjs;
 const { from, fromEvent } = window.VueUse;
 
 /*  <!-- 例えば、ターミナルエミュレータの設定で256色パレットではなく、
@@ -273,6 +269,7 @@ class Wterm {
     /* this.#current_line初期化はpromptの中 */
   }
   async #onKey(e){
+    const buf = this.#terminal.getSelection();
     if(this.#isbusy) return;
     const flag = await this.beforeOnKey(e);
     const shift = e.domEvent.shiftKey ? 'shift+' : ''
@@ -296,9 +293,13 @@ class Wterm {
         this.paste();
         break;
       case 'ctrl+c':
-        navigator.clipboard.writeText(this.#terminal.getSelection())
+        navigator.clipboard.writeText(buf)
         break;
       case 'ctrl+l': this.clear(); break;
+      case 'shift+ArrowUp': break;
+      case 'shift+ArrowDown': break;
+      case 'shift+ArrowLeft': break;
+      case 'shift+ArrowRight': break;
       default:
         if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey) {
           this.#current_line = this.#current_line.insert(e.key, this.#pos);
@@ -394,6 +395,9 @@ const wtermComponent = {
       return await props.onAsyncSubmit(e) // 戻り値を受ける
     };
 
+    // 何が流れてくるのか分かりにくい
+    // fromEvent(terminalRef, 'keydown').subscribe(e => {});
+  
     /******** mouse event ********/
 
     /* mousedown */
@@ -481,141 +485,3 @@ export { wtermComponent, Wterm };
   //   this.#linestorage.current_line = front + back;
   //   this.#terminal.write(`${ESC.delAfterN(this.#prompt_str.length + 1)}${this.#linestorage.current_line}${ESC.moveLeft(back.length)}`);
   // }
-
-
-//             async #onKey(e){
-//               // console.log(e.domEvent)
-//               switch(`${e.domEvent.ctrlKey ? 'ctrl+' : ''}${e.domEvent.key}`){
-//                 case 'ArrowUp':
-//                   this.#linestorage.current_line = this.#linestorage.back();
-//                   this.#refreshLine(this.#linestorage.current_line)
-//                   break;
-//                 case 'ArrowDown':
-//                   this.#linestorage.current_line = this.#linestorage.next();
-//                   this.#refreshLine(this.#linestorage.current_line)
-//                   break;
-//                 case 'ArrowLeft':
-//                   if(this.#cursorPos() > 0) {
-//                     this.#terminal.write(e.key);
-//                   }
-//                   break;
-//                 case 'ArrowRight':
-//                   if(this.#cursorPos() < this.#linestorage.current_line.length){
-//                     this.#terminal.write(e.key);
-//                   }
-//                   break;
-//                 case 'Home': this.#moveStartOfLine(); break;
-//                 case 'End': this.#moveEndOfLine(); break;
-//                 case 'Delete': this.#refreshLine(); break;
-//                 case 'Enter':
-//                   this.#terminal.writeln('');
-//                   await this.send(this.#linestorage.current_line);
-//                   this.prompt();
-//                   break;
-//                 case 'Backspace': this.#backSpace(); break;
-//                 case 'ctrl+c':
-//                   navigator.clipboard.writeText(this.#terminal.getSelection())
-//                   console.log("ctrl+c", this.#terminal.getSelection())
-//                   break;
-//                 default:
-//                   if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey) {
-//                     this.#insert(e.key)
-//                   }
-//                   break;
-//               }
-//             }
-          
-//             /* 旧
-//         switch(e.domEvent.key){
-//           case 'ArrowUp':
-//             this.terminal.write(`\x1b[${this.prompt_str.length + 1}G`);
-//             this.terminal.write(`\x1b[0K`);
-//             this.linestorage.current_line = '';
-//             this.linestorage.current_line = this.linestorage.back();
-//             this.terminal.write(this.linestorage.current_line);
-//             break;
-//           case 'ArrowDown':
-//             this.terminal.write(`\x1b[${this.prompt_str.length + 1}G`);
-//             this.terminal.write(`\x1b[0K`);
-//             this.linestorage.current_line = '';
-//             this.linestorage.current_line = this.linestorage.next();
-//             this.terminal.write(this.linestorage.current_line);
-//             break;
-//           case 'ArrowLeft':
-//             if(this.cursor() > 0) {
-//               this.terminal.write(e.key);
-//             }
-//             break;
-//           case 'ArrowRight':
-//             if(this.cursor() < this.linestorage.current_line.length){
-//               this.terminal.write(e.key);
-//             }
-//             break;
-//           case 'Home':
-//             this.terminal.write(`\x1b[${this.prompt_str.length + 1}G`);
-//             break;
-//           case 'Delete':
-//             this.terminal.write(`\x1b[${this.prompt_str.length + 1}G`);
-//             this.terminal.write(`\x1b[0K`);
-//             this.linestorage.current_line = '';
-//             break;
-//           case 'End':
-//             let a = this.linestorage.current_line.length
-//             this.terminal.write(`\x1b[${a + this.prompt_str.length + 1}G`);
-//             break;
-//           case 'Enter':
-//             this.terminal.writeln('');
-//             await this.send(this.linestorage.current_line);
-//             this.prompt();
-//             break;
-//           case 'Backspace':
-//             if (this.cursor() > 0) {
-//               this.terminal.write('\b \b');
-//               this.linestorage.current_line = this.linestorage.current_line.slice(0, -1);
-//             }
-//             break;
-//           default:
-
-//             if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey) {
-//               const front = this.linestorage.current_line.slice(0, this.cursor());
-//               const back = this.linestorage.current_line.slice(this.cursor());
-//               this.terminal.write(e.key + back + '\x1b[D'.repeat(back.length));
-//               this.linestorage.current_line = front + e.key + back;
-//             }
-
-//             window.ipc.postMessage(JSON.stringify({  ...  }));
-//             break;
-//         }
-
-
-//             // term.reset()
-
-
-//             appendTxt() {　 }
-//             input(src) {
-//               this.#terminal.write(src);
-//               this.#linestorage.current_line += src;
-//             }
-//             async inputln(src) {
-//               this.input(src + "\r\n");
-//               await this.send(this.current_line)
-//               this.prompt();
-//             }
-            
-//             writeln(src){
-//               this.write(`${src}\r\n`);
-//             }
-//             write(src){
-//               this.#terminal.write(src);
-//               // this.#linestorage.current_line += src;
-//               // this.#linestorage.current_line = this.#linestorage.current_line.split('\n').at(-1);
-//             }
-
-//             /*** method ***/
-
-
-//             history(n){
-//               this.#linestorage.history().slice(0, n).forEach(m=>{
-//                 this.writeln(m);
-//               });
-//             }
