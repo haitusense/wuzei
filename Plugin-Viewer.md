@@ -7,7 +7,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 - topics
   - Pickup raw output
     - Deep bit width (e.g. 12-32bit)
-    - Negative signal (e.g. Useing DCDS)  
+    - Negative signal (e.g. Useing DCDS)
     - Linear display
     - image scaled with nearest-neighbor rendering
   - Special Struct
@@ -18,6 +18,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     - correction
     - search
     - statistical analysis
+    - other ( linearity, color evaluation)
 - hidden topic
   - logic replaced by Rust
   - Using web technologies for presentation layer

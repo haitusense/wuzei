@@ -269,7 +269,7 @@ class Wterm {
     /* this.#current_line初期化はpromptの中 */
   }
   async #onKey(e){
-    const buf = this.#terminal.getSelection()
+    const buf = this.#terminal.getSelection();
     if(this.#isbusy) return;
     const flag = await this.beforeOnKey(e);
     const shift = e.domEvent.shiftKey ? 'shift+' : ''
@@ -394,13 +394,10 @@ const wtermComponent = {
       emit('on-submit', e) // 戻り値を受けない
       return await props.onAsyncSubmit(e) // 戻り値を受ける
     };
-    
-    /* mousedown */
-    fromEvent(terminalRef, 'keydown').subscribe(e => {
-      console.log(e)
-      e.preventDefault();
-    });
 
+    // 何が流れてくるのか分かりにくい
+    // fromEvent(terminalRef, 'keydown').subscribe(e => {});
+  
     /******** mouse event ********/
 
     /* mousedown */

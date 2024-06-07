@@ -127,12 +127,12 @@
           const onSubmit = async (e)=> {
             console.log(e)
             switch(e.type){
+              case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
               case 'getpixel':{
                 const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
-              case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
-
+              
               case 'sleep-js':{
                 for (let step = 0; step < 5; step++) {
                   if(termRef.value){
@@ -234,8 +234,6 @@
             termprompt$.subscribe(() => { termRef.value.prompt(); });
           }
 
-
-
           /******** view ********/
           // const isBusy$ = from(busy);
           // isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
@@ -292,10 +290,10 @@
           /******** mouse event without canvas ********/
 
           /******** mouse event in canvas ********/
-          const onMousemove = async (e, real, debounce)=> { 
+          const onMousemove = async (e, real, debounce)=> {
             if(debounce) {
               const dst = await asyncPostPixel({ x: real.x, y:real.y });
-              const toHex = (n) => '0x' + (('00000000' + n.toString(16).toUpperCase()).substr(-8));
+              const toHex = (n) => '0x' + (('00000000' + (n >>> 0).toString(16).toUpperCase()).substr(-8));
               stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
             } else {
               stalkerRef.value.intext('0', `${real.x} ${real.y}`)
@@ -334,7 +332,13 @@
               { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ termRef.value.input_append(`'${JSON.stringify(selected.value)}'`)  } },
               { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ termRef.value.input_insert(`'${JSON.stringify(selected.value)}'`) } },
               { type : 'div', value: 'Append command to Terminal', action: (e)=>{ termRef.value.input_insert(`py scripts/script.py '${JSON.stringify(selected.value)}'`) } },
-              { type : 'hr' }, 
+              { type : 'hr' },
+              { type : 'div', value: 'Send clip.py To Terminal', action: (e)=>{ 
+                termRef.value.input_overwrite(`py scripts/clip.py '${JSON.stringify(selected.value)}'`) 
+              } },
+              { type : 'div', value: 'Send clip_png.py To Terminal', action: (e)=>{ 
+                termRef.value.input_overwrite(`py scripts/clip_png.py '${JSON.stringify(selected.value)}'`) 
+              } },
               { type : 'div', value: 'Send stat.py To Terminal', action: (e)=>{ 
                 termRef.value.input_overwrite(`py scripts/stat.py '${JSON.stringify(selected.value)}'`) 
               } },
