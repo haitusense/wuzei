@@ -1,7 +1,7 @@
 //@ts-check
 
 //@ts-ignore
-const { createApp, ref, nextTick, onMounted, reactive, computed } = window.Vue;
+const { ref, nextTick, onMounted, computed } = window.Vue;
 const { /* from */ /* fromEvent */ of, merge, partition,
   filter, first, delay, map, takeUntil, debounceTime, scan,
   bufferToggle, switchMap, mergeMap,  
@@ -28,8 +28,6 @@ const convertClientToReal = (target, event) => {
   return { x:realX, y:realY, isIn:isInCanvas };
 }
 
-/**
- */
 const drawRect = (ref, margin, left, top, right, bottom) => {
   const ctx = ref.value.getContext("2d");
   ctx.beginPath();
@@ -42,11 +40,11 @@ const drawRect = (ref, margin, left, top, right, bottom) => {
   if(width > 0 && height > 0){
     ctx.fillStyle = "rgb(0, 0, 255, 0.2)";
     ctx.fillRect(left, top, width, height);
-    // console.log(left, top, width, height)
     ctx.strokeStyle = "rgba(0, 0, 255, 0.5)";
     ctx.lineWidth = 1;
     ctx.strokeRect(left + 0.5, top + 0.5, width - 1, height - 1);
-    console.log(left + 0.5, top + 0.5, width - 1, height - 1)
+    // console.log(left, top, width, height)
+    // console.log(left + 0.5, top + 0.5, width - 1, height - 1)
   }
   ctx.closePath();
 }
@@ -127,19 +125,23 @@ const canvasEx = {
       });
     },
     clip(selectflag){
+      const scaleFactor = this.cnvParams.zoomfactor;
       const sel = this.select;
       const x = selectflag ? sel.left : 0
       const y = selectflag ? sel.top : 0
       const w = selectflag ? sel.right - sel.left : this.canvasRef.width
       const h = selectflag ? sel.bottom - sel.top : this.canvasRef.height
 
-      const imageData = this.canvasRef.getContext('2d').getImageData(x, y, w, h);
       const temp = document.createElement('canvas');
-      temp.width = w;
-      temp.height = h;
+      temp.width = w * scaleFactor;
+      temp.height = h * scaleFactor;
       const ctx = temp.getContext('2d');
       if(ctx == null) return;
-      ctx.putImageData(imageData, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      // const imageData = this.canvasRef.getContext('2d').getImageData(x, y, w, h);
+      // ctx.putImageData(imageData, 0, 0);
+      ctx.drawImage(this.canvasRef, x, y, w, h, 0, 0, w * scaleFactor, h * scaleFactor);
+
       temp.toBlob(async (blob) => { 
         if(blob == null) return;
         await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
@@ -207,7 +209,6 @@ const canvasEx = {
       ))
     );
     mousedownLeft$.subscribe(e => { /* console.log("drag up", convertSelectedToRect(selected.value)) */ });
-
 
     /*** wheel event ***/
     const mousewheel$ = fromEvent(divRef, 'wheel').pipe(tap(ev => { /* ev.preventDefault() */ } ));

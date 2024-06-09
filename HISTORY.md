@@ -1,6 +1,15 @@
-## 0.1.4 (2024-)
+# History
+
+## 0.1.5 (2024-06-09)
+- change : terminal ```onKey```, ```onMount```, call prompt logic
+- change : clip canvas logic (ref zoomfactor)
+- enable : ```ps``` command
+- add : ```cd``` command
+- add : from_np, from_array
+- add : Extension of starturl / ```file:///```, ```local:///```, ```resource:///```
+## 0.1.4 (2024-06-08)
 - add : py example
-- fix : shortcut, context menu, toHex
+- fix : shortcut, context menu, ```toHex```
 ## 0.1.3 (2024-06-03)
 - update : wry & tao version
 - fix : F5 reload (event_loop-init)
@@ -21,3 +30,9 @@
 - fix : rendering shortcut
 ## 0.1.0 (2024-03-25)
 - first release
+
+# Upcoming
+
+- mmf, memorymapped for scripting
+- WebAssembly
+- scripting in hraw

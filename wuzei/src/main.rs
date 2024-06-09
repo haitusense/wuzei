@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use anyhow::Context;
 use colored::*;
 use include_dir::{include_dir, Dir};
-use huazhi::{HuazhiDir, HuazhiBuilder};
+use huazhi::{ HuazhiBuilder, HuazhiDir };
 
 #[derive(clap::ValueEnum, Serialize, Deserialize, Clone, Debug)]
 enum ConsoleType {
@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
         let res = match request.uri().path() {
           n if n.starts_with("/resource") => huazhi::custom_protocol::async_custom_protocol_resource(&RESOURCE, n.trim_start_matches("/resource/")).await,
           n if n.starts_with("/local") => huazhi::custom_protocol::async_custom_protocol_local(n.trim_start_matches("/local/")).await,
+          n if n.starts_with("/file") => huazhi::custom_protocol::async_custom_protocol_local(n.trim_start_matches("/file/")).await,
           "/api" => async_custom_protocol_api(request, proxy_mutex_clone).await,
           _=> huazhi::custom_protocol::async_custom_protocol_err(request.uri().path()).await
         };

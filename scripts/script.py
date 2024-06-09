@@ -24,10 +24,4 @@ def main(args):
   print('pl dataframe:', type(pl_df))
   print(pl_df)
 
-  hoge = random.randint(0, 255)
-  print('get pixel (10, 10) :', Px.get(10, 10))
-  print('set pixel : (10, 10) = ', hoge)
-  Px.set(10, 10, hoge)
-  print('get pixel (10, 10) :', Px.get(10, 10))
-
   return args

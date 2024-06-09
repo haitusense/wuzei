@@ -13,8 +13,6 @@
     <script src="./@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
     <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 
-    <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
-
     <style>
       html, body { height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
       #app{ height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
@@ -37,14 +35,15 @@
             @on-context="onContextmenu"
             @on-mousemove="onMousemove"
             @on-wheel="onWheel"
-            ></canvas-ex>
+          ></canvas-ex>
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
           <my-terminal ref="termRef"
-            :on-async-key="beforeOnKey"
-            @on-change="onChange" 
-            @on-submit="onSubmit" :on-async-submit="onAsyncSubmit"
+            :before-on-key="beforeOnKey"
+            @on-mounted="onTermMounted"
+            @on-change="onChange"
+            @on-submit="onSubmit"
           ></terminal>
         </vue-pane>
       </vue-split-pane>
@@ -107,7 +106,6 @@
           })
 
           /******** method ********/
-
           const _readfile = async (path) => {
             otherState.value.path = path;
             await readFile(path, otherState.value.subpath)
@@ -118,19 +116,31 @@
           };
 
           /******** terminal ********/
-
-          const beforeOnKey = async (e) => { return true; }
+          const onTermMounted = async (e) => { /* 自分でprompt必要 */
+            console.log('onTermMounted')
+            const dst = await asyncPostJson("env", undefined )
+            termRef.value.prompt(`${ dst ? dst.payload.current_dir : ""}> `);
+          }
+          const beforeOnKey = (e) => { return true; }
           const onChange = (e)=> { /* console.log(e) */ }
-
-          // どちらを使うか。
-          const onAsyncSubmit = async (e) => { return false; /* true : promptの自動表示 */ }
-          const onSubmit = async (e)=> {
+          const onSubmit = async (e) => { /* 自分でprompt必要 */
             console.log(e)
             switch(e.type){
               case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
+              case 'env':{
+                const dst = await asyncPostJson("env", undefined )
+                termRef.value.write(JSON.stringify(dst));
+              } break;
+              case 'cd':{
+                const dst = await asyncPostJson("cd", e.payload[0] )
+                termRef.value.write(JSON.stringify(dst));
+              } break;
               case 'getpixel':{
                 const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
                 termRef.value.write(`${JSON.stringify(dst)}`);
+              } break;
+              case 'refresh':{
+                rawState.value = { ...rawState.value }
               } break;
               
               case 'sleep-js':{
@@ -196,8 +206,8 @@
                 termRef.value.write(`${JSON.stringify(dst)}`);
               } break;
               case 'ps':{
-                const dst = await asyncPostJson("ps", e.payload[0]);
-                termRef.value.write(`${dst}`);
+                const dst = await asyncPostJson("ps", e.payload);
+                termRef.value.write(JSON.stringify(dst));
               } break;
 
               case 'state':{
@@ -224,7 +234,8 @@
                 // canvasRef.value.zoom(e.payload)
                 break;
             }
-            termRef.value.prompt(); // 自分でprompt必要
+            const dst = await asyncPostJson("env", undefined )
+            termRef.value.prompt(`${ dst ? dst.payload.current_dir : "" }> `);
           }
           
           if(window.chrome.webview){
@@ -257,9 +268,8 @@
 
               case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
               case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
-
-              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
-              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
+              case 'shift+ctrl+ArrowUp': { zoom.value = zoom.value+1; e.preventDefault(); } break;
+              case 'shift+ctrl+ArrowDown': { zoom.value = zoom.value-1; e.preventDefault(); } break;
 
               case 'IntlRo': { rendering.value = !rendering.value } break;
 
@@ -348,31 +358,6 @@
             ],
             "OUT" : [
               { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false); } },
-            //   { type : 'div', value: 'Copy Full 2', action: async (e)=>{ 
-            //     const mediaStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-            //     const canvas = document.createElement('canvas');
-            //     const ctx = canvas.getContext('2d');
-            //     const video = document.createElement('video');
-            //     video.srcObject = mediaStream;
-            //     video.play();
-            //     video.onloadedmetadata = () => {
-            //       canvas.width = video.videoWidth;
-            //       canvas.height = video.videoHeight;
-            //       ctx.drawImage(video, 0, 0);
-            //       video.pause();
-            //       canvas.toBlob(blob => {
-            //         navigator.clipboard.write([
-            //           new ClipboardItem({
-            //             'image/png': blob
-            //           })
-            //         ]).then(() => {
-            //           console.log('スクリーンショットをクリップボードにコピーしました。');
-            //         }).catch(err => {
-            //           console.error('クリップボードへのコピーに失敗しました: ', err);
-            //         });
-            //       }, 'image/png');
-            //     };
-            // } },
               { type : 'div', value: 'Dummy', action: (e)=>{ console.log('Dummy', e) } },
             ]
           });
@@ -402,7 +387,7 @@
             termShow, contextList, 
             onMousemove, onContextmenu, onDrop, onWheel,
             canvasRef, contextRef, stalkerRef,
-            termRef, beforeOnKey, onChange, onSubmit, onAsyncSubmit,
+            termRef, onTermMounted, beforeOnKey, onChange, onSubmit,
             zoom, selected, rendering,
             testRef
           }

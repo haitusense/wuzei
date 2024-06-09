@@ -1,6 +1,34 @@
 use colored::*;
 use include_dir::Dir;
 
+pub fn minetype(path:&str) -> &str {
+  match path {
+    n if n.ends_with(".apng") => "image/apng",
+    n if n.ends_with(".bin") => "application/octet-stream",
+    n if n.ends_with(".bmp") => "image/bmp",
+    n if n.ends_with(".css") => "text/css",
+    n if n.ends_with(".csv") => "text/csv",
+    n if n.ends_with(".gif") => "image/gif",
+    n if n.ends_with(".htm") => "text/html",    
+    n if n.ends_with(".html") => "text/html",
+    n if n.ends_with(".ico") => "image/vnd.microsoft.icon",
+    n if n.ends_with(".jpeg") => "image/jpeg",
+    n if n.ends_with(".jpg") => "image/jpeg",
+    n if n.ends_with(".js") => "text/javascript",
+    n if n.ends_with(".json") => "application/json",
+    n if n.ends_with(".jsonld") => "application/ld+json",
+    n if n.ends_with(".mjs") => "text/javascript",
+    n if n.ends_with(".png") => "image/png",
+    n if n.ends_with(".svg") => "image/svg+xml",
+    n if n.ends_with(".tif") => "image/tiff",
+    n if n.ends_with(".tiff") => "image/tiff",
+    n if n.ends_with(".txt") => "text/plain",
+    n if n.ends_with(".webp") => "image/webp",
+    n if n.ends_with(".xhtml") => "application/xhtml+xml",
+    _=> "application/octet-stream",
+  }
+}
+
 pub enum ResContent<'a> {
   TXT(&'a str),
   JSON(&'a serde_json::Value),
@@ -9,6 +37,8 @@ pub enum ResContent<'a> {
   CSS(&'a str),
   BYTES(&'a [u8]),
   IMAGE(Vec<u8>),
+  SVG(&'a str),
+  OTHER(&'a str, &'a [u8])
 }
 
 impl<'a> ResContent<'a> {
@@ -20,7 +50,9 @@ impl<'a> ResContent<'a> {
       ResContent::HTML(_) => "text/html",
       ResContent::CSS(_) => "text/css",
       ResContent::BYTES(_) => "application/octet-stream",
-      ResContent::IMAGE(_) => "image/png"
+      ResContent::IMAGE(_) => "image/png",
+      ResContent::SVG(_) => "image/svg+xml",
+      ResContent::OTHER(n, _) => n
     }
   }
   fn to_body(&self) -> Vec<u8> {
@@ -31,11 +63,12 @@ impl<'a> ResContent<'a> {
       ResContent::HTML(n) => n.as_bytes().to_vec(),
       ResContent::CSS(n) => n.as_bytes().to_vec(),
       ResContent::BYTES(n) => n.to_vec(),
-      ResContent::IMAGE(n) => n.to_owned()
+      ResContent::IMAGE(n) => n.to_owned(),
+      ResContent::SVG(n) => n.as_bytes().to_vec(),
+      ResContent::OTHER(_, n) => n.to_vec()
     }
   }
 }
-
 
 pub fn response(content:ResContent) -> wry::http::Response<Vec<u8>> {
   wry::http::Response::builder()
@@ -64,14 +97,19 @@ pub fn response_500(content:ResContent) -> wry::http::Response<Vec<u8>> {
 pub async fn async_custom_protocol_resource(resource: &Dir<'static>, url: &str) -> wry::http::Response<Vec<u8>> {
   println!("{} resource path {:?}", "custom protocol".on_green(), url);
   match resource.get_file(url) {
-    Some(n) => {
-      let content = n.contents_utf8().unwrap();
-      let dst = match url {
-        n if n.ends_with(".js") => ResContent::JAVASCRIPT(content),
-        n if n.ends_with(".html") => ResContent::HTML(content),
-        n if n.ends_with(".css") => ResContent::CSS(content),
-        _=> ResContent::TXT(content)
-      };
+    
+    Some(path) => {
+      let content = path.contents().to_vec();
+      let dst = ResContent::OTHER(minetype(url), &content);
+      // let dst = match url {
+      //   n if n.ends_with(".js") => ResContent::JAVASCRIPT(path.contents_utf8().unwrap()),
+      //   n if n.ends_with(".html") => ResContent::HTML(path.contents_utf8().unwrap()),
+      //   n if n.ends_with(".htm") => ResContent::HTML(path.contents_utf8().unwrap()),
+      //   n if n.ends_with(".css") => ResContent::CSS(path.contents_utf8().unwrap()),
+      //   n if n.ends_with(".png") => ResContent::IMAGE(path.contents().to_vec()),
+      //   n if n.ends_with(".svg") => ResContent::SVG(path.contents_utf8().unwrap()),
+      //   _=> ResContent::TXT(path.contents_utf8().unwrap())
+      // };
       response(dst)
     },
     None => {
@@ -86,13 +124,18 @@ pub async fn async_custom_protocol_resource(resource: &Dir<'static>, url: &str) 
 
 pub async fn async_custom_protocol_local(url: &str) -> wry::http::Response<Vec<u8>> {
   println!("{} local path {:?}", "custom protocol".on_green(), url);
-  let content = std::fs::read_to_string(&url).expect("could not read file");
-  let dst: ResContent = match url {
-    n if n.ends_with(".js") => ResContent::JAVASCRIPT(content.as_str()),
-    n if n.ends_with(".html") => ResContent::HTML(content.as_str()),
-    n if n.ends_with(".css") => ResContent::CSS(content.as_str()),
-    _=> ResContent::TXT(content.as_str())
-  };
+  let content = std::fs::read(&url).expect("could not read file");
+  // let content = std::fs::read_to_string(&url).expect("could not read file");
+  let dst = ResContent::OTHER(minetype(url), &content);
+  // let dst: ResContent = match url {
+  //   n if n.ends_with(".js") => ResContent::JAVASCRIPT(std::str::from_utf8(&content).unwrap()),
+  //   n if n.ends_with(".html") => ResContent::HTML(std::str::from_utf8(&content).unwrap()),
+  //   n if n.ends_with(".htm") => ResContent::HTML(std::str::from_utf8(&content).unwrap()),
+  //   n if n.ends_with(".css") => ResContent::CSS(std::str::from_utf8(&content).unwrap()),
+  //   n if n.ends_with(".png") => ResContent::IMAGE(content),
+  //   n if n.ends_with(".svg") => ResContent::SVG(std::str::from_utf8(&content).unwrap()),
+  //   _=> ResContent::TXT(std::str::from_utf8(&content).unwrap()),
+  // };
   response(dst)
 }
 

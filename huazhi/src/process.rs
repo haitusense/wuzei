@@ -91,7 +91,6 @@ fn run_powershell<F>(func: F) -> anyhow::Result<std::process::ExitStatus> where 
   // std::fs::Fileから解放、wait()で待つをしないとロック or リリースされてしまう
 
   Ok(dst)
-
 }
 
 #[cfg(test)]

@@ -23,7 +23,5 @@ pub fn reducer(src: &mut State, val: Message) -> serde_json::Value {
   }
   src.pos += 1;
 
-  
-
   return serde_json::json!({ "a" : src.pos });
 }
