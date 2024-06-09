@@ -4,10 +4,8 @@ use std::process::Stdio;
 use tokio_util::codec::*;
 use futures::prelude::*;
 use std::str::FromStr;
-use numpy::prelude::*;
-use numpy::{PyArray, PyArray2};
-use pyo3::Python;
-use pyo3::Py;
+use numpy::{PyArray, PyArray2, prelude::*};
+use pyo3::{Python, Py, /* types::PyAny */ Bound};
 
 use huazhi::custom_protocol::{response, response_400, ResContent};
 
@@ -19,6 +17,8 @@ pub enum TypeNames {
   Refresh,
   GetPixel,
   GetPath,
+  Env,
+  Cd,
   ReadRaw,
   ReadPng,
   Py1,
@@ -56,6 +56,29 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
         thread::sleep(t);
       }
       let dst = serde_json::json!({ "state": "successed", "payload": "" });
+      response(ResContent::JSON(&dst))
+    },
+    TypeNames::Env => {
+      let dst = serde_json::json!({ 
+        "status": "successed",
+        "payload": {
+          "current_dir": std::env::current_dir()?, 
+        }
+      });
+      response(ResContent::JSON(&dst))
+    },
+    TypeNames::Cd => {
+      let root = payload.as_str().unwrap_or(".\\");
+      let dst = match std::env::set_current_dir(&root){
+        Ok(_) => "successed",
+        Err(_) => "failed"
+      };
+      let dst = serde_json::json!({ 
+        "status": dst,
+        "payload": {
+          "current_dir": std::env::current_dir()?, 
+        }
+      });
       response(ResContent::JSON(&dst))
     },
     TypeNames::Resize => {
@@ -281,4 +304,22 @@ impl Pixel {
     let pyarray = arr.reshape([height, width]).unwrap();
     pyarray.into()
   }
+  fn from_array(&self, src:Vec<i32>) {
+    use huazhi::memorymappedfile::*;
+    let mut mmf = super::get_mmf().lock().unwrap();
+    // let mmf_value = mmf.get_value();
+    // let width = mmf_value["width"].as_u64().unwrap() as usize;
+    // let height = mmf_value["height"].as_u64().unwrap() as usize;
+    mmf.to_accessor().write_array::<i32>(0, &src);
+  }  
+  fn from_np<'py>(&self, src: &Bound<'py, PyArray2<i32>>) {
+    use huazhi::memorymappedfile::*;
+    let mut mmf = super::get_mmf().lock().unwrap();
+    // let mmf_value = mmf.get_value();
+    // let width = mmf_value["width"].as_u64().unwrap() as usize;
+    // let height = mmf_value["height"].as_u64().unwrap() as usize;
+    let vec = src.to_vec().unwrap();
+    mmf.to_accessor().write_array::<i32>(0, &vec);
+  }
+
 }

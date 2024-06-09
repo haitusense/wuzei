@@ -4,7 +4,6 @@ use tao::{
   event::{Event, StartCause, WindowEvent}
 };
 use wry::WebView;
-
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Default, Debug)]

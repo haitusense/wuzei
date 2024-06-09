@@ -1,20 +1,14 @@
-const { onMounted, onUnmounted, ref } = window.Vue;
+//@ts-check
+
+//@ts-ignore
+const { onMounted, nextTick, onUnmounted, ref } = window.Vue;
+//@ts-ignore
 const { /* from */ /* fromEvent */ of, merge, filter, first, delay, switchMap } = window.rxjs;
+//@ts-ignore
 const { from, fromEvent } = window.VueUse;
 
-/*  <!-- 例えば、ターミナルエミュレータの設定で256色パレットではなく、
-    16色パレットを使用している場合、\x1b[33mは茶色っぽく表示される可能性があります。 -->
- https://qiita.com/suzuki-navi/items/ac6de24a138f4a5fd585
- \x1b = \033 = \u001b = \U0000001b, \eはc系？
-色	    標準の8色	明るい8色	 256色	 RGB
-文字色	30～37	  90～97	  38;5;n	38;2;r;g;b
-背景色	40～47	  100～107	48;5;n	48;2;r;g;b
- Erases the whole line	\x1B[2K
-Goes back to the begining of the line	\r
-*/
 class ESC {
-  // Erases the whole line	\x1B[2K
-  // Goes back to the begining of the line	\r
+
   static hideCursor(n) { return `\x1b[?25l` }
   static showCursor(n) { return `\x1b[?25h` }
   static move(n) { return `\x1b[${n}G` }
@@ -24,13 +18,24 @@ class ESC {
   static delAfterN(n) { return `\x1b[${n}G\x1b[0K` }
   static eraseLine(n) { return `\x1b[2K` }
   static backSpace(n) { return `\b \b` }
+  /*
+  以下は同じ意味 \x1b, \033, \u001b, \U0000001b, c系は\e？
+  ターミナルエミュレータのは256色パレットか16色パレットかで色味が違って見える（\x1b[33mは茶色っぽく表示されたり）
+  Erases the whole line	                \x1B[2K
+  Goes back to the begining of the line	\r
+                   | 8-defaultcolor | 8-lightcolor | 256-color | RGB
+  foreground-color | 30-37          | 90-97        | 38;5;n	   | 38;2;r;g;b
+  background-color | 40-47          | 100-107      | 48;5;n    | 48;2;r;g;b
+  */
 }
 
+//@ts-ignore
 String.prototype.insert = function (src, index) {
   const front = this.slice(0, index);
   const back = this.slice(index);
   return front + src + back;
 };
+//@ts-ignore
 String.prototype.overwrite = function (src, index) {
   const front = this.slice(0, index);
   const back = this.slice(index+1);
@@ -88,6 +93,7 @@ function syntaxHighlighting(src){
 
 function onKeySendWithIpc(e){
   // isTrustedしか流れないのでobject再構成
+  //@ts-ignore
   window.ipc.postMessage(JSON.stringify({ 
     type: "test", 
     payload: {
@@ -172,40 +178,60 @@ class LineStorage {
 class Wterm {
   #terminal
   #fitAddon
-  #prompt_str = '> ';
-  beforeOnKey = {};
-  onChange = {};
-  onAsyncSubmit =(e)=> { return false; };
+  #prompt_str = '';
+  /**
+   * @param {any} n
+   * @returns {boolean}
+   */
+  beforeOnKey = (n) => { return true; };
+  /**
+   * @param {any} n
+   */
+  onChange = (n) => {};
+  /**
+   * @param {any} n
+   */
+  onSubmit = (n) => { };
 
   #storage = new LineStorage();
   #current_line = ''
   #pos = 0
   #cursorPos = () => this.#terminal.buffer.active.cursorX - this.#prompt_str.length
 
-  #isbusy = false;
+  #isbusy = true;
 
   /*** init ***/
   constructor() {
-    this.#terminal = new window.Terminal({
+    //@ts-ignore
+    const Terminal = window.Terminal;
+    //@ts-ignore
+    const FitAddon = window.FitAddon;
+
+    this.#terminal = new Terminal({
       fontSize: 12,
       fontFamily: "Consolas, 'Courier New', monospace",
       RendererType: 'canvas',
       theme: { /* foreground: 'yellow', */ }
     });
-    this.#fitAddon = new window.FitAddon.FitAddon()
+    this.#fitAddon = new FitAddon.FitAddon()
     this.#terminal.loadAddon(this.#fitAddon);
 
     if (this.#terminal._initialized) { return; }
     this.#terminal._initialized = true;
 
     this.#terminal.prompt = () =>{ this.#prompt() };
-    this.#terminal.onKey(async e => { await this.#onKey(e) })
+    this.#terminal.onKey( e => { this.#onKey(e) } )
     // this.#terminal.onData(e => { });
     // this.#terminal.onCursorMove(e => { console.log("onCursorMove ", this.#terminal.buffer) });
   }
 
   open(id) {
-    this.#terminal.open(document.getElementById(id));
+    const elem = document.getElementById(id);
+    if(elem == undefined){
+      console.error(`${id} not found`);
+      return;
+    }
+    this.#terminal.open(elem);
     const imageContainerObserver = new ResizeObserver((entries) => {
       entries.forEach((entry) => {
         // console.log(entry.contentRect.height, entry.contentRect.width)
@@ -213,16 +239,16 @@ class Wterm {
         this.#terminal.scrollToBottom();
       });
     });
-    imageContainerObserver.observe(document.getElementById(id));
+    imageContainerObserver.observe(elem);
     this.#fitAddon.fit();
     this.#terminal.clear();
     const buffer = localStorage.getItem('wterm_buffer')
     if (buffer) {
       this.#terminal.writeln(buffer)
-      this.#terminal.prompt()
+      // this.#terminal.prompt()
     }else{
       this.#terminal.writeln("welcome to wterm")
-      this.#terminal.prompt()
+      // this.#terminal.prompt()
     }
     this.#terminal.focus();
   }
@@ -256,28 +282,20 @@ class Wterm {
     const buf = syntaxHighlighting(this.#current_line);
     this.#terminal.write(`\x1b[0G\x1b[2K${this.#prompt_str}${buf}\x1b[${len}G`);
   }
-  async #enter(){
-    this.#isbusy = true
-    this.#storage.regist(this.#current_line)
-    this.#terminal.writeln('');
-    const json = commandlineParser(this.#current_line)
-    const bubbling = await this.onAsyncSubmit(json);
-    if(bubbling) { 
-      await this.#defaultAction(json) 
-      this.#terminal.prompt();
+
+  #onKey(e){
+    /* asyncにするとgetSelection()が取れないことがあるので同期化 */
+    if(this.#isbusy) {
+      console.log('terminal is busy')
+      return;
     }
-    /* this.#current_line初期化はpromptの中 */
-  }
-  async #onKey(e){
-    const buf = this.#terminal.getSelection();
-    if(this.#isbusy) return;
-    const flag = await this.beforeOnKey(e);
+    if( !this.beforeOnKey(e)){ return; }
     const shift = e.domEvent.shiftKey ? 'shift+' : ''
     const ctrl = e.domEvent.ctrlKey ? 'ctrl+' : ''
     const alt = e.domEvent.altKey ? 'alt+' : ''
     const key = `${shift}${ctrl}${alt}${e.domEvent.key}`
 
-    if(key == 'Enter') { await this.#enter(); return; }
+    if(key == 'Enter') { this.#enter(); return; }
     switch(key){
       case 'ArrowUp': this.#current_line = this.#storage.back(); this.#pos = this.#current_line.length; break;
       case 'ArrowDown': this.#current_line = this.#storage.next(); this.#pos = this.#current_line.length; break;
@@ -287,13 +305,15 @@ class Wterm {
       case 'Home': this.#pos = 0; break;
       case 'ctrl+ArrowRight': this.#pos = this.#current_line.length; break;
       case 'End': this.#pos = this.#current_line.length; break;
+      //@ts-ignore
       case 'Delete': this.#current_line = this.#current_line.overwrite('', this.#pos); break;
+      //@ts-ignore
       case 'Backspace': this.#pos -= 1; this.#current_line = this.#current_line.overwrite('', this.#pos); break;
       case 'ctrl+v':
-        this.paste();
+        navigator.clipboard.readText().then((n) => this.input_append(n));
         break;
       case 'ctrl+c':
-        navigator.clipboard.writeText(buf)
+        navigator.clipboard.writeText(this.#terminal.getSelection())
         break;
       case 'ctrl+l': this.clear(); break;
       case 'shift+ArrowUp': break;
@@ -302,6 +322,7 @@ class Wterm {
       case 'shift+ArrowRight': break;
       default:
         if(!e.domEvent.altKey && !e.domEvent.ctrlKey && !e.domEvent.metaKey) {
+          //@ts-ignore
           this.#current_line = this.#current_line.insert(e.key, this.#pos);
           this.#pos += 1;
         }
@@ -309,9 +330,19 @@ class Wterm {
     }
     this.#buildOutput();
   }
+  #enter(){
+    this.#isbusy = true;
+    this.#storage.regist(this.#current_line);
+    this.#terminal.writeln('');
+    const json = commandlineParser(this.#current_line);
+    this.onSubmit(json);
+    // const bubbling = await this.onAsyncSubmit(json);
+    // if(bubbling) {
+    //   /* rustとの通信 */
+    //   this.#terminal.prompt();
+    // }
 
-  async #defaultAction(json){
-    /* rustとの通信 */
+    /* this.#current_line初期化はpromptの中 */
   }
 
   /*** public method ***/
@@ -322,87 +353,76 @@ class Wterm {
   write(args){
     this.#terminal.write(args);
   }
+  clear(){ 
+    localStorage.removeItem('wterm_buffer')
+    this.#terminal.clear()
+    this.#terminal.prompt()
+  }
   input_append(args){
     // this.#terminal.input(args); // -> onDataに入力
+    //@ts-ignore
     this.#current_line = this.#current_line.insert(args, this.#pos);
     this.#pos += args.length;
     this.#buildOutput();
   }
   input_insert(args){
     // this.#terminal.input(args); // -> onDataに入力
+    //@ts-ignore
     this.#current_line = this.#current_line.insert(args, this.#pos);
     this.#pos += args.length;
     this.#buildOutput();
   }
-  async input_overwrite(args){
+  input_overwrite(args){
     this.#current_line = args;
     this.#pos += args.length;
     this.#buildOutput();
-    await this.#enter()
+    this.#enter()
   }
-  paste(){
-    navigator.clipboard
-      .readText()
-      .then((n) => this.input_append(n));
+  prompt(args){ 
+    this.#prompt_str = args;
+    this.#terminal.prompt() 
   }
-  clear(){ 
-    localStorage.removeItem('wterm_buffer')
-    this.#terminal.clear()
-    this.#terminal.prompt()
-  }
-
-  prompt(){ this.#terminal.prompt() }
 }
-
 
 /*
   emitはasyncできないのでpropsでsendにつなぐ
 */
 const wtermComponent = {
-  template: `
-    <div id="terminal" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>
-  `,
+  template: `<div id="terminal" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>`,
   data() { return { /* count: 0 */ } },
   props: {
-    onAsyncKey: { type: Function, },
-    onAsyncSubmit: { type: Function, default: ()=>{ return false; }, required: false },
+    beforeOnKey: { type: Function, }, /* asyncにしない */
   },
   methods: {
     log(args) { this.term.log(args) }, 
     write(args) { this.term.write(args) }, // プロンプトラインでは機能しない様にする？
-    prompt(args) { this.term.prompt() },
+    clear() { this.term.clear() },
     input_append(args) { this.term.input_append(args) },
     input_insert(args) { this.term.input_insert(args) },
     input_overwrite(args) { this.term.input_overwrite(args) },
-    clear(args) { this.term.clear() }
+    prompt(args) { this.term.prompt(args) },
   },
   /* 
-    emit: 
-      on-change,
-      on-submit
+    emit: on-change, on-submit, on-mounted
   */
   setup(props, { emit }) {
     console.log("setup term") /*毎回呼ばれる*/
     const terminalRef = ref(null);
 
     /******** terminal ********/
-
     const term = new Wterm();
-    term.beforeOnKey = async (e) => { return props.onAsyncKey(e) };
-    term.onChange = async (e) => { emit('on-change', e) };
-    term.onAsyncSubmit = async (e) => { 
-      emit('on-submit', e) // 戻り値を受けない
-      return await props.onAsyncSubmit(e) // 戻り値を受ける
-    };
+    term.beforeOnKey = (e) => { return props.beforeOnKey(e) };
+    term.onChange = (e) => { emit('on-change', e) };
+    term.onSubmit = (e) => { emit('on-submit', e) };
 
-    // 何が流れてくるのか分かりにくい
-    // fromEvent(terminalRef, 'keydown').subscribe(e => {});
+    /******** key event ********/
+    /* fromEventは何が流れてくるのか分かりにくいので未使用 */
   
     /******** mouse event ********/
 
     /* mousedown */
     fromEvent(terminalRef, 'mousedown').pipe(filter(e=> e.buttons == 4)).subscribe(e => {
-      term.paste();
+      navigator.clipboard.readText().then((n) => term.input_append(n));
       e.preventDefault();
     });
 
@@ -427,16 +447,18 @@ const wtermComponent = {
       term.input_append(path)
       terminalRef.value.style.opacity = 1
     }
-    if(window.chrome.webview){
+    //@ts-ignore
+    const wv = window.chrome.webview;
+    if(wv){
       fromEvent(terminalRef, 'drop').pipe(
-        switchMap((e) => merge( of(e).pipe(delay(100)), fromEvent(window.chrome.webview, 'newWindowReq')).pipe(first()) )
-      ).subscribe(e => {
+        switchMap( e => merge( of(e).pipe(delay(100)), fromEvent(wv, 'newWindowReq')).pipe(first()) )
+      ).subscribe( e => {
         drop(e.detail.payload)
       })
     }else{
       fromEvent(terminalRef, 'drop').subscribe(async e => {
         e.stopPropagation(); // 親への伝播をとめる
-        e.preventDefault();  //イベントのキャンセル
+        e.preventDefault();  // イベントのキャンセル
         const file = e.dataTransfer.files[0].name;
         drop(file)
       })
@@ -446,6 +468,7 @@ const wtermComponent = {
     onMounted(() => {
       console.log('terminal mounted')
       term.open('terminal');
+      nextTick(() => { emit('on-mounted', null); });
     }),
     onUnmounted(() => {
       // windowclose時に呼ばれるように検討

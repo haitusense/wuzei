@@ -131,18 +131,32 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
     println!("{} {}", "current dir".blue(), path.display());
     println!("{} {:?}", "start_url".blue(), url);
     let dst = match url {
-      None => {
-        // let html = include_str!("index_vue.html");
-        // self.with_html(html)
-        self.with_url(format!("http://{name}.localhost/resource/index.html").as_str())
-      },
       Some(n) if n.starts_with("https://") || n.starts_with("http://") => {
         self.with_url(n.as_str())
       },
+      Some(n) if n.starts_with("file:") => {
+        let m = n.trim_start_matches("file:");
+        self.with_url(format!("http://{name}.localhost/local/{m}").as_str())
+      },
+      Some(n) if n.starts_with("local:") => {
+        let m = n.trim_start_matches("local:");
+        self.with_url(format!("http://{name}.localhost/local/{m}").as_str())
+      },
+      Some(n) if n.starts_with("resource:") => {
+        let m = n.trim_start_matches("resource:");
+        self.with_url(format!("http://{name}.localhost/resource/{m}").as_str())
+      },
       Some(n) => {
-        self.with_url(format!("http://{name}.localhost/resource/{n}").as_str())
-        // let content = std::fs::read_to_string(&n).expect("could not read file");
-        // self.with_html(content)
+        self.with_url(format!("http://{name}.localhost/local/{n}").as_str())
+      },
+      None => {
+        self.with_url(format!("http://{name}.localhost/resource/index.html").as_str())
+        /* **use with_html**
+        let content = include_str!("index.html");
+        let content = std::fs::read_to_string(&n).expect("could not read file");
+        
+        self.with_html(content);
+        */
       }
     };
     Ok(dst)
@@ -187,7 +201,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
       })
       .with_ipc_handler(move |arg: wry::http::Request<String>| { event_handler::ipc_handler(arg, &proxy_ipc) })
   }
-  
+
   fn resist_pipe_handler(self, event_loop:&tao::event_loop::EventLoop<UserEvent>, pipename:&str) -> Self {
     println!("{} {}", "resist pipe".blue(), pipename);
     let proxy = event_loop.create_proxy();

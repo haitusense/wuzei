@@ -26,32 +26,6 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 
 ## Usage
 
-### Canvas default key assignment
-
-| function                          | mouse                    | shotcut-key            | terminal command |
-| :--                               | :--:                     | :--:                   | :--              |
-| **Show/Hide the Terminal window** |                          | ctrl + '@'             | |
-| **read file**                     | drag and drop [*]        |                        | ```read [path]``` |
-| **select**                        | left + move [*]          |                        | ```select [left] [top] [right] [bottom]``` |
-| **context menu**                  | right [*]                |                        | |
-| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```bitshift [num]``` |
-| **zoom up/down** (browser)        | ctrl + wheel             | ctrl + '+'/'-'         | |
-| **zoom reset** (browser)          |                          | ctrl + 0               | |
-| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```zoom [level]``` |
-| **mono/color**                    |                          | shift + ←/→            | ```color [num]``` |
-| **rendering**                     |                          | '\\'                    | |
-| echo                              |                          |                        | ```echo [args]``` |
-| show state                        |                          |                        | ```state``` |
-| set state                         |                          |                        | ```set [key] [value]``` |
-| getpixel                          |                          |                        | ```getpixel [x] [y]``` |
-| scripting (js eval)               |                          |                        | ```js1 [command]``` |
-| scripting (py eval)               |                          |                        | ```py1 [command]``` |
-| scripting (py preset)             |                          |                        | ```py-pst``` |
-| scripting (py from file)          |                          |                        | ```py [path] [args]``` |
-| scripting (ps)                    |                          |                        | ```ps``` |
-
-[*] : event in canvas
-
 ### Terminal keyboard shortcuts / mouse event
 
 | function                               | mouse       | shotcut-key     |
@@ -66,15 +40,35 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 | context menu (browser default)         | right       |                 |
 | Cycle through previously used commands |             | ↑ / ↓           |
 
-#### disable
+### Canvas default key assignment
 
-- send from namedpipe or prompt-dialog
+| function                          | mouse                    | shotcut-key            | terminal command |
+| :--                               | :--:                     | :--:                   | :--              |
+| **Show/Hide the Terminal window** |                          | ctrl + '@'             | |
+| **read file**                     | drag and drop [*]        |                        | ```read [path]``` |
+| **select**                        | left + move [*]          |                        | ```select [left] [top] [right] [bottom]``` |
+| **context menu**                  | right [*]                |                        | |
+| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```bitshift [num]``` |
+| **zoom up/down** (browser)        | ctrl + wheel             | ctrl + '+'/'-'         | |
+| **zoom reset** (browser)          |                          | ctrl + 0               | |
+| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```zoom [level]``` |
+|                                   |                          | shift + ctrl + ↑/↓     | |
+| **mono/color**                    |                          | shift + ←/→            | ```color [num]``` |
+| **rendering**                     |                          | '\\'                   | |
+| echo                              |                          |                        | ```echo [args]``` |
+| get current_dir                   |                          |                        | ```env``` |
+| set current_dir                   |                          |                        | ```cd [path]``` |
+| show state                        |                          |                        | ```state``` |
+| set state                         |                          |                        | ```set [key] [value]``` |
+| refresh                           |                          |                        | ```refresh``` |
+| getpixel                          |                          |                        | ```getpixel [x] [y]``` |
+| scripting (js eval)               |                          |                        | ```js1 [command]``` |
+| scripting (py eval)               |                          |                        | ```py1 [command]``` |
+| scripting (py preset)             |                          |                        | ```py-pst``` |
+| scripting (py from file)          |                          |                        | ```py [path] [args]``` |
+| scripting (ps)                    |                          |                        | ```ps``` |
 
-| function           | mouse                | shotcut-key     | terminal command |
-| :--                | :--:                 | :--:            | :--              |
-| prompt-dialog      | center (deep click)  |                 |                  |
-| alert              |                      |                 | alert [message]  |
-
+[*] : event in canvas
 
 **color**
 
@@ -100,6 +94,15 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     ↑ ↑ ↑ ↑
     R G B A
 ```
+
+#### disable
+
+- send from namedpipe or prompt-dialog
+
+| function           | mouse                | shotcut-key     | terminal command |
+| :--                | :--:                 | :--:            | :--              |
+| prompt-dialog      | center (deep click)  |                 |                  |
+| alert              |                      |                 | alert [message]  |
 
 ### Scripting
 
