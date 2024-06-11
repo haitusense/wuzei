@@ -26,6 +26,10 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 
 ## Usage
 
+```powershell
+ps> wuzei.exe -s resource:viewer.html
+```
+
 ### Terminal keyboard shortcuts / mouse event
 
 | function                               | mouse       | shotcut-key     |
@@ -66,7 +70,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 | scripting (py eval)               |                          |                        | ```py1 [command]``` |
 | scripting (py preset)             |                          |                        | ```py-pst``` |
 | scripting (py from file)          |                          |                        | ```py [path] [args]``` |
-| scripting (ps)                    |                          |                        | ```ps``` |
+| scripting (ps)                    |                          |                        | ```ps [args]``` |
 
 [*] : event in canvas
 

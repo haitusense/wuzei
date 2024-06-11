@@ -1,6 +1,11 @@
 # History
 
-## 0.1.5 (2024-06-09)
+## 0.1.6 / huazhi 0.1.4 (2024--)
+termを仮想ターミナルptyに分離して、rustとの切り替え準備
+クリップボードコピーに\n含まれてた時の扱い
+actionのロジックをdicに変えてlist表示できるように
+JSDocの適用拡大
+## 0.1.5 / huazhi 0.1.3 (2024-06-09)
 - change : terminal ```onKey```, ```onMount```, call prompt logic
 - change : clip canvas logic (ref zoomfactor)
 - enable : ```ps``` command

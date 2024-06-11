@@ -36,9 +36,9 @@ ps> wuzei.exe -c alloc-console
 **when using a custom GUI**
 
 ```powershell
-ps> wuzei.exe -s index.html           # from local file
-ps> wuzei.exe -s local:./index.html   # from local file
-ps> wuzei.exe -s file:./index.html   # from local file
-ps> wuzei.exe -s resource:index.html  # from resource file
+ps> wuzei.exe -s index.html              # from local file
+ps> wuzei.exe -s local:./index.html      # from local file
+ps> wuzei.exe -s file:./index.html       # from local file
+ps> wuzei.exe -s resource:index.html     # from resource file
 ps> wuzei.exe -s https://www.google.com/ # from web
 ``

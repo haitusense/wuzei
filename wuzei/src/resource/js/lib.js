@@ -43,8 +43,6 @@ async function asyncCheckWebview() {
   // }
 }
 
-
-
 /**
  * @param {string} type
  * @param {any} payload
@@ -206,7 +204,8 @@ function asyncLoadImage(path) {
   });
 }
 
-/* method */
+/*** method ***/
+
 /**
  * @param {string} path
  * @param {string} subpath
@@ -230,6 +229,40 @@ const readFile = async (path, subpath) => {
     } break;
   }
 }
+
+/*** method for term ***/
+
+function onKeySendWithIpc(e){
+  // isTrustedしか流れないのでobject再構成
+  //@ts-ignore
+  window.ipc.postMessage(JSON.stringify({ 
+    type: "test", 
+    payload: {
+      altKey : e.domEvent.altKey,
+      ctrlKey : e.domEvent.ctrlKey,
+      metaKey : e.domEvent.metaKey,
+      shiftKey : e.domEvent.shiftKey,
+      key : e.domEvent.key,
+      charCode : e.domEvent.charCode,
+      code : e.domEvent.code,
+      keyCode : e.domEvent.keyCode,
+    }
+  }));
+}
+
+async function sendWithFetch(type, args){
+  const response = await fetch("http://wuzei.localhost/terminal", { 
+    method: "POST",
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: type,
+      payload: args
+    })
+  });
+  const dst = await response.text();
+  return dst;
+}
+
 
 export { 
   sleep, indoc, asyncCheckWebview, 
