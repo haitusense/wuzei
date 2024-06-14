@@ -16,14 +16,6 @@ function indoc(src) {
   return src.replace(regexp, '');
 }
 
-const fruits = Object.freeze({
-  apple: '🍎',
-  banana: '🍌',
-  grape: '🍇',
-  orange: '🟠',
-})
-
-
 async function asyncCheckWebview() {
   //@ts-ignore
   const webview = window.chrome.webview;
@@ -263,6 +255,21 @@ async function sendWithFetch(type, args){
   return dst;
 }
 
+// 使用辞めた
+function setStr(){
+  //@ts-ignore
+  String.prototype.insert = function (src, index) {
+    const front = this.slice(0, index);
+    const back = this.slice(index);
+    return front + src + back;
+  };
+  //@ts-ignore
+  String.prototype.overwrite = function (src, index) {
+    const front = this.slice(0, index);
+    const back = this.slice(index+1);
+    return front + src + back;
+  };
+}
 
 export { 
   sleep, indoc, asyncCheckWebview, 

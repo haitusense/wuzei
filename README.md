@@ -1,6 +1,6 @@
 # wuzei
 
-customizable GUI
+customizable GUI くコ:彡
 
 ## Install
 
@@ -36,9 +36,15 @@ ps> wuzei.exe -c alloc-console
 **when using a custom GUI**
 
 ```powershell
-ps> wuzei.exe -s index.html              # from local file
+ps> wuzei.exe -s ./index.html            # from local file
 ps> wuzei.exe -s local:./index.html      # from local file
 ps> wuzei.exe -s file:./index.html       # from local file
 ps> wuzei.exe -s resource:index.html     # from resource file
 ps> wuzei.exe -s https://www.google.com/ # from web
-``
+```
+
+```
+local:./index.html  -> http://wuzei.localhoset/local/C:/hoge/index.html -> C:/hoge/index.html
+resource:index.html -> http://wuzei.localhoset/resource/index.html
+
+```

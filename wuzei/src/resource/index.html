@@ -1,6 +1,8 @@
 <!doctype html>
 <html>
   <head>
+    <!-- https://cdn.jsdelivr.net/npm -->
+    <!-- http://wuzei.localhost/resource/ -->
     <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
     <script src="./rxjs@7.8.1/dist/bundles/rxjs.umd.min.js"></script>
     <script src="./@vueuse/rxjs@10.9.0/index.iife.js"></script>
@@ -23,6 +25,8 @@
       <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
         <vue-pane style="overflow:scroll; position: relative;">
           <div>test</div>
+          <div contenteditable virtualkeyboardpolicy="manual" id="editor"></div>
+          <button id="edit-button">Edit</button>
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
@@ -31,38 +35,42 @@
             :before-on-key="(e) =>{ return true; }"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
+            @on-drop="(e)=>{ onDrop = e}"
           ></terminal>
         </vue-pane>
       </vue-split-pane>
     </div>
     <!-------- logic -------->
     <script type="module">
-      import { 
-        sleep, indoc,
-        asyncCheckWebview, post, asyncGetTxt, asyncPostJson,
-        readFile
-      } from "./js/lib.js"
+      //@ts-check
+
+      //@ts-ignore
+      const [ wv, Vue, rxjs, VueUse ] = [ window.chrome.webview, window.Vue, window.rxjs, window.VueUse ];
+      //@ts-ignore
+      const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
+
+      import { indoc, post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
       import { wtermComponent, WPty } from "./component/wterm.js"
-      const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
+      const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
         bufferToggle, switchMap, mergeMap,  
         share, tap
-      } = window.rxjs;
-      const { from, fromEvent } = window.VueUse;
+
+      } = rxjs;
+      const { from, fromEvent } = VueUse;
+
+      const pty = new WPty("wv");
 
       const app = createApp({
         setup() {
-          const wv = window.chrome.webview;
-          const pty = new WPty("wv");
           const isBusy = ref(true);
-          const [termShow, bodyRef, termRef] = [ref(false), ref(null), ref(null)];
+          const [termShow, termRef] = [ref(false), ref(null)];
+          const onDrop = ref(false);
 
           const state = ref({
             path : "",
           });
-
-          /******** method ********/
 
           /******** busy ********/
           from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
@@ -73,39 +81,41 @@
           /******** action ********/
           pty.setCmd({
             /* js */
-            'echo' : { 'note': 'function', 'func': async (e, callback) =>{
-              callback(`echo overwrite`);
-            }},
-            'sleep' : { 'note': 'function', 'func': async (e, callback) =>{
-              for (let step = 0; step < 5; step++) {
-                callback(`${step}`);
-                await sleep(1000);
-              }
+            'echo' : { 'type': 'action', 'func': async (e, callback) =>{
+              callback(`echo overwrite: ${e.payload.join(' ')}`);
             }},
 
-            'state' : { 'note': 'function', 'func': async (e, callback) =>{
-              callback(`state : ${JSON.stringify(state.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
+            'state' : { 'type': 'action', 'func': async (e, callback) =>{
+              callback(`state : ${JSON.stringify(state.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
             }},
-            'set' : { 'note': 'function', 'func': async (e, callback) =>{
+            'set' : { 'type': 'action', 'func': async (e, callback) =>{
               state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
             }},
 
             /* rust */
-            'env' : { 'note': 'function', 'func': async (e, callback) =>{
+            'env' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("env", undefined )
               callback(JSON.stringify(dst));
             }},
-            'cd' : { 'note': 'function', 'func': async (e, callback) =>{
+            'cd' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("cd", e.payload[0] )
               callback(JSON.stringify(dst));
             }},
-
-            'ps' : { 'note': 'function', 'func': async (e, callback) =>{
+            'ps' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("ps", e.payload);
               callback(JSON.stringify(dst));
             }},
-          
-            'selenium' : { 'note': 'function', 'func': async (e, callback) =>{
+            'sleep-event' : { 'type': 'function', 'func': async (e, callback) =>{
+              post("sleep", { a : 1, b :2 });
+              // callbackで受けるのでtermRef.value.prompt()を投げない
+              // event -> prompt
+            }}, 
+            'sleep-async' : { 'type': 'function', 'func': async (e, callback) => {
+              const dst = await asyncPostJson("sleep", ["1"] )
+              callback(JSON.stringify(dst));
+            }},
+
+            'selenium' : { 'type': 'script', 'func': async (e, callback) =>{
                 const code = await asyncGetTxt(`local/scripts/selenium.py`)
                 callback(`\x1b[32m`);
                 callback(`\x1b[32m========code========\r\n`);
@@ -122,20 +132,16 @@
           });
 
           /******** terminal ********/
-
+          const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
           const onTermMounted = async (e) => {
             console.log('onTermMounted');
-            /* 自分でprompt必要 */
-            pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+            await customPrompt(); /* 自分でprompt必要 */
           }
           pty.onSubmit(async (e)=> {
             console.log("submit", e)
             isBusy.value = true;
-
             await pty.asyncCmd(e);
-
-            /* 自分でprompt必要 */
-            pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+            await customPrompt(); /* 自分でprompt必要 */
             isBusy.value = false;
           });
           /*
@@ -143,18 +149,10 @@
             だとtermがないときにコマンドの行き先がなくなる
             termRef.valueで分岐させるのも煩雑だしlogが残らなくなるのでいまいち
           */
-          
-          if(wv){
-            fromEvent(wv, 'write').subscribe((e) => { pty.write(`${e.detail}`); });
-            fromEvent(wv, 'prompt').subscribe(async () => { 
-              pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
-            });
-          }
 
           /******** key event / shortcut ********/
-
-          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
           // filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )
+          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
           keydown$.pipe(filter(n => 
             n.key.startsWith('Arrow') || ['\\', '.'].includes(n.key)
             || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
@@ -162,35 +160,56 @@
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
             switch(keys){
               case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; }break;
-              case "shift+ctrl+KeyZ": { pty.overwrite("echo hoge"); } break;
+              case "shift+ctrl+KeyZ": { pty.input("welcome", 'execute'); } break;
               case "shift+ctrl+KeyA": { pty.log("testwrite\r\n"); } break;
               case "shift+ctrl+KeyX": { pty.hideprompt(); } break;
               case "shift+ctrl+KeyC": { pty.showprompt(); } break;
+              
+              // コマンド送信テスト
+              // case "shift+ctrl+KeyA": { pty.log("testwrite\r\n"); } break;
+              // case "shift+ctrl+KeyX": { pty.hideprompt(); } break;
+              // case "shift+ctrl+KeyC": { pty.showprompt(); } break;
+
               default: {} return;
             }
             e.preventDefault();
           });
+
+          /******** drag and dorp ********/
+
+          ( wv 
+            ? from(onDrop).pipe( switchMap( e => merge( of(e).pipe(delay(100)), fromEvent(wv, 'newWindowReq')).pipe(first()) ))
+            : from(onDrop).pipe( tap(e => { e.stopPropagation(); e.preventDefault(); }) )
+          ).subscribe( async e => {
+            const mode = "append";
+            const commamd = (n) => pty.input(`echo JSON.stringify(${n}))`, mode);
+            switch(`${ e.constructor.name }:${ e?.detail?.type ?? e.dataTransfer.items[0].kind }`){
+              case 'DragEvent:string': {
+                const url = await (()=> new Promise(resolve => e.dataTransfer.items[0].getAsString(data => resolve(data))))();
+                commamd(url)
+              } break;
+              case 'DragEvent:file': { commamd(e.dataTransfer.items[0].getAsFile().name) } break; // cannot read full path
+              case 'CustomEvent:file': { commamd(e?.detail?.payload) } break;
+              case 'CustomEvent:http': { commamd(e?.detail?.payload) } break;
+              default: console.error("unknown type in drop event"); break;
+            }
+          });
+
           /******** other event ********/
+
           if(wv){
+
+            fromEvent(wv, 'write').subscribe((e) => { pty.log(`${e.detail}`); });
+            fromEvent(wv, 'prompt').subscribe(async () => { await customPrompt(); });
 
             const updated$ = fromEvent(wv, 'updated');
             updated$.subscribe(async (e) => { console.log('updated', e); });
 
-            const newWindowReq$ = fromEvent(wv, 'newWindowReq');
-            newWindowReq$.subscribe((e) => { 
-              console.log('newWindowReq', e);
-              switch(e.detail.type){
-                case 'file': { } break;
-                case 'http': { 
-                  pty.overwrite(`selenium ${JSON.stringify(e.detail.payload)}`)
-                } break;
-                default: break;
-              }
-              
-            });
-
             const namedPipe$ = fromEvent(wv, 'namedPipe');
-            namedPipe$.subscribe(e => { console.log("namedPipe", e) });
+            namedPipe$.subscribe(e => { 
+              console.log("namedPipe", e) 
+              pty.input(e, 'execute');
+            });
           }
           
           /******** onMounted ********/
@@ -201,14 +220,14 @@
             nextTick(() => { console.log('app rendered'); });
           });
           return { 
-            isBusy,
-            termShow, bodyRef,
-            termRef, onTermMounted, pty
+            isBusy, termShow,
+            termRef, onTermMounted, pty, onDrop
           }
         }
       });
-      app.component('vue-pane', window.splitpanes.Pane);
-      app.component('vue-split-pane', window.splitpanes.Splitpanes);
+
+      app.component('vue-pane', Pane);
+      app.component('vue-split-pane', Splitpanes);
       app.component('my-terminal', wtermComponent);
       app.mount('#app');
     </script>

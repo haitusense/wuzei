@@ -10,6 +10,9 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     - Negative signal (e.g. Useing DCDS)
     - Linear display
     - image scaled with nearest-neighbor rendering
+  - Strictness of Bit Operation
+    - Check for flag bit  
+    - Check for errors in IO / digital logic / ADC
   - Special Struct
     - color filter array (e.g. RGBW)
     - read order (e.g. Using Pixel sharing)
@@ -19,6 +22,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     - search
     - statistical analysis
     - other ( linearity, color evaluation)
+  - Terminal operation
 - hidden topic
   - logic replaced by Rust
   - Using web technologies for presentation layer
@@ -29,20 +33,6 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 ```powershell
 ps> wuzei.exe -s resource:viewer.html
 ```
-
-### Terminal keyboard shortcuts / mouse event
-
-| function                               | mouse       | shotcut-key     |
-| :--                                    | :--:        | :--:            |
-| select text                            | left + move |                 |
-| paste                                  | center      | ctrl + v        |
-| copy                                   |             | ctrl + c        |
-| clear                                  |             | ctrl + l        |
-| home                                   |             | home / ctrl + ← |
-| end                                    |             | end  / ctrl + → |
-| clear                                  |             | ctrl + l        |
-| context menu (browser default)         | right       |                 |
-| Cycle through previously used commands |             | ↑ / ↓           |
 
 ### Canvas default key assignment
 
@@ -103,10 +93,10 @@ ps> wuzei.exe -s resource:viewer.html
 
 - send from namedpipe or prompt-dialog
 
-| function           | mouse                | shotcut-key     | terminal command |
-| :--                | :--:                 | :--:            | :--              |
-| prompt-dialog      | center (deep click)  |                 |                  |
-| alert              |                      |                 | alert [message]  |
+| function         | mouse                | shotcut-key     | terminal command |
+| :--              | :--:                 | :--:            | :--              |
+| prompt-dialog    | center (deep click)  |                 |                  |
+| alert           |                      |                 | alert [message]  |
 
 ### Scripting
 

@@ -1,7 +1,6 @@
 <!doctype html>
 <html>
   <head>
-    <!-- https://cdn.jsdelivr.net/npm -->
     <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
     <script src="./rxjs@7.8.1/dist/bundles/rxjs.umd.min.js"></script>
     <script src="./@vueuse/rxjs@10.9.0/index.iife.js"></script>
@@ -31,7 +30,7 @@
             :zoom="zoom" @update:zoom="$event => (zoom = $event)"
             :select="selected" @update:select="$event => (selected = $event)"
             :rendering="rendering ? 'pixelated' : 'auto'"
-            @on-drop="onDrop"
+            @on-drop="(e)=>{ onDrop = { type : 'canvas', event : e }}"
             @on-context="onContextmenu"
             @on-mousemove="onMousemove"
             @on-wheel="onWheel"
@@ -40,10 +39,11 @@
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
           <my-terminal ref="termRef"
-            :before-on-key="beforeOnKey"
+            :pty="pty"
+            :before-on-key="(e) =>{ return true; }"
             @on-mounted="onTermMounted"
-            @on-change="onChange"
-            @on-submit="onSubmit"
+            @on-change="(e)=>{/*console.log(e)*/}"
+            @on-drop="(e)=>{ onDrop = { type : 'terminal', event : e }}"
           ></terminal>
         </vue-pane>
       </vue-split-pane>
@@ -53,34 +53,36 @@
     </div>
     <!-------- logic -------->
     <script type="module">
-      import { 
-        sleep, indoc,
-        asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, 
-        setState,
-        readFile
-      } from "./js/lib.js"
+      //@ts-check
 
-      // await asyncCheckWebview();// undefined
-      // setState({ a: "hoge" });
-      // console.log(window.dummyState)
+      //@ts-ignore
+      const [ wv, Vue, rxjs, VueUse ] = [ window.chrome.webview, window.Vue, window.rxjs, window.VueUse ];
+      //@ts-ignore
+      const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
-      import { wtermComponent, Wterm } from "./component/wterm.js"
+      import { indoc, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, setState, readFile } from "./js/lib.js"
+      import { wtermComponent, WPty } from "./component/wterm.js"
       import { canvasEx } from "./component/canvas-ex.js"
       import { contextmenu } from "./component/context.js"
       import { stalker } from "./component/stalker.js"
 
-      const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
-      const { /* from */ /* fromEvent */ of, merge, partition,
+      const { createApp, ref, nextTick, onMounted, reactive } = Vue;
+      const { of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
         bufferToggle, switchMap, mergeMap,  
         share, tap
-      } = window.rxjs;
-      const { from, fromEvent } = window.VueUse;
+      } = rxjs;
+      const { from, fromEvent } = VueUse;
 
+      const pty = new WPty("wv");
+      
       const app = createApp({
         setup() {
+
+          const isBusy = ref(true);
           const [termShow, termRef] = [ref(false), ref(null)];
           const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
+          const [onDrop] = [ref(null)];
           const [testRef] = [ref(null)];
 
           const rawState = ref({ 
@@ -92,8 +94,12 @@
           const otherState = ref({
             path : "", 
             subpath: "data.raw",
+            stalker : "(e) => e + 0"
           });
           const [zoom, selected, rendering] = [ref(null), ref(null), ref(true)];
+          
+          /******** busy ********/
+          from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
 
           /* to sk */
           from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
@@ -105,196 +111,152 @@
             canvasRef.value.redraw(image);
           })
 
-          /******** method ********/
-          const _readfile = async (path) => {
-            otherState.value.path = path;
-            await readFile(path, otherState.value.subpath)
-            rawState.value = { ...rawState.value }
-            // const image = await asyncPostPng(rawState.value)
-            // canvasRef.value.redraw(image);
-            // window.wterm.inputln(`echo ${e.detail.payload}`);
-          };
+          /******** action ********/
+          pty.setCmd({
+            /* js */
 
-          /******** terminal ********/
-          const onTermMounted = async (e) => { /* 自分でprompt必要 */
-            console.log('onTermMounted')
-            const dst = await asyncPostJson("env", undefined )
-            termRef.value.prompt(`${ dst ? dst.payload.current_dir : ""}> `);
-          }
-          const beforeOnKey = (e) => { return true; }
-          const onChange = (e)=> { /* console.log(e) */ }
-          const onSubmit = async (e) => { /* 自分でprompt必要 */
-            console.log(e)
-            switch(e.type){
-              case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
-              case 'env':{
-                const dst = await asyncPostJson("env", undefined )
-                termRef.value.write(JSON.stringify(dst));
-              } break;
-              case 'cd':{
-                const dst = await asyncPostJson("cd", e.payload[0] )
-                termRef.value.write(JSON.stringify(dst));
-              } break;
-              case 'getpixel':{
-                const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'refresh':{
-                rawState.value = { ...rawState.value }
-              } break;
-              
-              case 'sleep-js':{
-                for (let step = 0; step < 5; step++) {
-                  if(termRef.value){
-                    termRef.value.write(`${step}`);
-                  }else{
-                    console.log(step)
-                  }
-                  await sleep(1000);
-                }
-              } break;
-              case 'sleep-event':{
-                post("sleep", { a : 1, b :2 });
-              } return; // callbackで受けるのでtermRef.value.prompt()を投げない
-              case 'sleep-async':{
-                const dst = await asyncPostJson("sleep", ["1"] )
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'test':{
-                post("unknown", { a : 1, b : 2 });
-              } return; // termRef.value.prompt();を投げない
-              
-              case 'js1':{
-                let dst = eval(e.payload.join(' '))
-                if(termRef.value){
-                  termRef.value.write(`${e.payload.join(' ')} = ${dst}`);
-                }else{
-                  console.log(dst)
-                } 
-              } break;
-              case 'py1':{
-                const dst = await asyncPostJson("py1", e.payload.join(' ') )
-                termRef.value.write(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
-              } break;
-              case 'py-pst':{
-                const dst = await asyncPostJson("py", { 
-                  code: indoc(`
-                    def main(args):
-                      print('__name__ :', __name__)
-                      print('args :', args)
-                      print('dst :', Pixel.get(10, 10))
-                      Pixel.set(10, 10, 255)
-                      args["x"] = 10
-                      return args
-                  `), 
-                  entry: "main",
-                  args: JSON.stringify({ x:1, y:2 }) 
-                } );
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-
-              case 'py':{
-                const code = await asyncGetTxt(`local/${e.payload[0]}`)
-                termRef.value.write(`========code========\r\n`);
-                termRef.value.write(`${code}\r\n`);
-                termRef.value.write(`========result========\r\n`);
-                const dst = await asyncPostJson("py", { 
-                  code: code,
-                  entry: "main",
-                  args: JSON.stringify(JSON.parse(e.payload[1]))
-                } );
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'ps':{
-                const dst = await asyncPostJson("ps", e.payload);
-                termRef.value.write(JSON.stringify(dst));
-              } break;
-
-              case 'state':{
-                termRef.value.write(`rawState : ${JSON.stringify(rawState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
-                termRef.value.write(`otherState : ${JSON.stringify(otherState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
-              } break;
-              case 'set':{
-                otherState.value = { ...otherState.value, [e.payload[0]] : e.payload[1] }
-              } break;
-
-              case 'select':{ selected.value = {
+            'state' : { 'type': 'action', 'func': async (e, callback) =>{
+              callback(`rawState : ${JSON.stringify(rawState.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+              callback(`otherState : ${JSON.stringify(otherState.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+            }},
+            'set' : { 'type': 'action', 'func': async (e, callback) =>{
+              otherState.value = { ...otherState.value, [e.payload[0]] : e.payload[1] }
+            }},
+            
+            'select' : { 'type': 'function', 'func': async (e, callback) =>{
+              selected.value = {
                 left: Number(e.payload[0]), 
                 top: Number(e.payload[1]),
                 right: Number(e.payload[2]),
                 bottom:Number(e.payload[3])
-              } } break;
-              case 'zoom':{ zoom.value = Number(e.payload[0]) } break;
-              case 'bitshift':{ rawState.value = {...rawState.value, bitshift: Number(e.payload[0])} } break;
-              case 'color':{ rawState.value = {...rawState.value, color: Number(e.payload[0])} } break;
+              }
+            }},
+            'zoom' : { 'type': 'action', 'func': async (e, callback) =>{
+              zoom.value = Number(e.payload[0])
+              // termRef.value.write(`zoom : ${e.payload}`);
+              // canvasRef.value.zoom(e.payload)
+            }},
+            'bitshift' : { 'type': 'function', 'func': async (e, callback) =>{
+              rawState.value = {...rawState.value, bitshift: Number(e.payload[0])}
+            }},
+            'color' : { 'type': 'function', 'func': async (e, callback) =>{
+              rawState.value = {...rawState.value, color: Number(e.payload[0])}
+            }},
 
-              case 'read': { await _readfile(e.payload[0]); } break;
-              default:
-                // termRef.value.write(`zoom : ${e.payload}`);
-                // canvasRef.value.zoom(e.payload)
-                break;
-            }
-            const dst = await asyncPostJson("env", undefined )
-            termRef.value.prompt(`${ dst ? dst.payload.current_dir : "" }> `);
+            /* rust */
+            'env' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("env", undefined )
+              callback(JSON.stringify(dst));
+            }},
+            'cd' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("cd", e.payload[0] )
+              callback(JSON.stringify(dst));
+            }},
+            'getpixel' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
+              callback(JSON.stringify(dst));
+            }},
+            'refresh' : { 'type': 'function', 'func': async (e, callback) =>{
+              rawState.value = { ...rawState.value }
+            }},
+            'read' : { 'type': 'function', 'func': async (e, callback) =>{
+              otherState.value.path = e.payload[0];
+              await readFile(e.payload[0], otherState.value.subpath)
+              rawState.value = { ...rawState.value }
+            // const image = await asyncPostPng(rawState.value)
+            // canvasRef.value.redraw(image);
+            // window.wterm.inputln(`echo ${e.detail.payload}`);
+            }},
+
+            'js1' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = eval(e.payload.join(' '))
+              callback(`${e.payload.join(' ')} = ${dst}`);
+            }},
+            'py1' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("py1", e.payload.join(' ') )
+              callback(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
+            }},
+            'py-pst' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("py", { 
+                code: indoc(`
+                  def main(args):
+                    print('__name__ :', __name__)
+                    print('args :', args)
+                    print('dst :', Pixel.get(10, 10))
+                    Pixel.set(10, 10, 255)
+                    args["x"] = 10
+                    return args
+                `), 
+                entry: "main",
+                args: JSON.stringify({ x:1, y:2 }) 
+              } );
+              callback(JSON.stringify(dst));
+            }},
+
+            'py' : { 'type': 'function', 'func': async (e, callback) =>{
+              const code = await asyncGetTxt(`local/${e.payload[0]}`)
+              callback(`========code========\r\n`);
+              callback(`${code}\r\n`);
+              callback(`========result========\r\n`);
+              const dst = await asyncPostJson("py", { 
+                code: code,
+                entry: "main",
+                args: JSON.stringify(JSON.parse(e.payload[1]))
+              } );
+              callback(`${JSON.stringify(dst)}`);
+            }},
+            'ps' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("ps", e.payload);
+              callback(JSON.stringify(dst));
+            }},
+
+          });
+
+          /******** terminal ********/
+          const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+          const onTermMounted = async (e) => {
+            console.log('onTermMounted')
+            await customPrompt();
           }
+          pty.onSubmit(async (e)=> {
+            console.log("submit", e)
+            isBusy.value = true;
+            await pty.asyncCmd(e);
+            await customPrompt();
+            isBusy.value = false;
+          });
           
-          if(window.chrome.webview){
-            const termwrite$ = fromEvent(window.chrome.webview, 'write');
-            termwrite$.subscribe((e) => { termRef.value.write(`${e.detail}`); });
-            const termprompt$ = fromEvent(window.chrome.webview, 'prompt');
-            termprompt$.subscribe(() => { termRef.value.prompt(); });
-          }
-
-          /******** view ********/
-          // const isBusy$ = from(busy);
-          // isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
-
           /******** key event / shortcut ********/
-
-          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
-          // filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )
-          keydown$.pipe(filter(n => 
-            n.key.startsWith('Arrow')
-            || ['\\', '.'].includes(n.key)
-            || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
-          )).subscribe( async e => {
+          fromEvent(document, 'keydown').pipe(
+            filter( n => n.repeat === false ), 
+            filter(n => n.key.startsWith('Arrow')
+              || ['\\', '.'].includes(n.key)
+              || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
+            )
+          ).subscribe( async e => {
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
-            console.log(keys)
             switch(keys){
-              case 'shift+ArrowUp': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowDown': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift - 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowRight': { rawState.value = { ...rawState.value , color: rawState.value.color + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowLeft': { rawState.value = { ...rawState.value , color: rawState.value.color - 1 }; e.preventDefault(); } break;
+              /* break -> e.preventDefault() */
+              case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; } break;
 
-              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
-              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
-              case 'shift+ctrl+ArrowUp': { zoom.value = zoom.value+1; e.preventDefault(); } break;
-              case 'shift+ctrl+ArrowDown': { zoom.value = zoom.value-1; e.preventDefault(); } break;
+              case 'shift+ArrowUp': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift + 1 }; } break;
+              case 'shift+ArrowDown': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift - 1 }; } break;
+              case 'shift+ArrowRight': { rawState.value = { ...rawState.value , color: rawState.value.color + 1 }; } break;
+              case 'shift+ArrowLeft': { rawState.value = { ...rawState.value , color: rawState.value.color - 1 }; } break;
+
+              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; } break;
+              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; } break;
+              case 'shift+ctrl+ArrowUp': { zoom.value = zoom.value+1; } break;
+              case 'shift+ctrl+ArrowDown': { zoom.value = zoom.value-1; } break;
 
               case 'IntlRo': { rendering.value = !rendering.value } break;
 
-              case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; }break;
+              case "F5": { pty.input("refreash", 'execute'); } break;
 
-              // コマンド送信テスト
-              case "alt+KeyZ": { termRef.value.input_insert("___") } break;
-              case "alt+KeyX": { termRef.value.input_append("___") } break;
-              case "alt+KeyC": { 
-                if(termRef.value){
-                  termRef.value.input_overwrite("sleep") /* 隠してるときはコマンド何処から送るの？ */
-                }else{
-                  await onSubmit({ type: "sleep" })
-                }
-              } break;
-              // ログテスト
-              case "alt+KeyV":
-                console.log(termRef.value)
-                if(termRef.value){
-                  termRef.value.log("logout")
-                }else{
-                  await onSubmit({ type: "sleep" })
-                }
-              default: {} break;
+              /* return -> bubbling */
+              default: {} return;
             }
+            e.preventDefault();
           });
 
           /******** mouse event without canvas ********/
@@ -303,22 +265,16 @@
           const onMousemove = async (e, real, debounce)=> {
             if(debounce) {
               const dst = await asyncPostPixel({ x: real.x, y:real.y });
+              const code = String(otherState.value.stalker);//"(e) => e + 3"
+              const sum = new Function('src', `return (${code})(src)`);
+              const t = sum(dst.data)
+              
               const toHex = (n) => '0x' + (('00000000' + (n >>> 0).toString(16).toUpperCase()).substr(-8));
-              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
+              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${t}\r\n${toHex(dst.data)}`)
             } else {
               stalkerRef.value.intext('0', `${real.x} ${real.y}`)
             }
-            // termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
             e.preventDefault()
-          }
-
-          const onDrop = async (e)=> {
-            console.log('newWindowReq', e);
-            switch(e.detail.type){
-              case 'file': { await _readfile(e.detail.payload); } break;
-              case 'http': { } break;
-              default: break;
-            }
           }
 
           const onWheel = async (e) =>{ 
@@ -339,21 +295,25 @@
             "IN" : [
               { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true); } },
               { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(selected.value)); } },
-              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ termRef.value.input_append(`'${JSON.stringify(selected.value)}'`)  } },
-              { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ termRef.value.input_insert(`'${JSON.stringify(selected.value)}'`) } },
-              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ termRef.value.input_insert(`py scripts/script.py '${JSON.stringify(selected.value)}'`) } },
+              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ pty.input(`'${JSON.stringify(selected.value)}'`, true)  } },
+              { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ pty.input(`'${JSON.stringify(selected.value)}'`) } },
+              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ pty.input(`py scripts/script.py '${JSON.stringify(selected.value)}'`, true) } },
               { type : 'hr' },
               { type : 'div', value: 'Send clip.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/clip.py '${JSON.stringify(selected.value)}'`) 
+                pty.input(`py scripts/clip.py '${JSON.stringify(selected.value)}'`, 'execute') 
               } },
               { type : 'div', value: 'Send clip_png.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/clip_png.py '${JSON.stringify(selected.value)}'`) 
+                pty.input(`py scripts/clip_png.py '${JSON.stringify(selected.value)}'`, 'execute')
               } },
               { type : 'div', value: 'Send stat.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/stat.py '${JSON.stringify(selected.value)}'`) 
+                pty.input(`py scripts/stat.py '${JSON.stringify(selected.value)}'`, 'execute') 
               } },
               { type : 'div', value: 'Send hist.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/hist.py '${JSON.stringify(selected.value)}'`) 
+                pty.input(`py scripts/hist.py '${JSON.stringify(selected.value)}'`, 'execute') 
+              } },
+              { type : 'div', value: 'Send draw.py To Terminal', action: (e)=>{ 
+                pty.input(`py scripts/draw.py '${JSON.stringify(selected.value)}'`, 'execute')
+                pty.input("refresh", 'execute');
               } },
             ],
             "OUT" : [
@@ -362,13 +322,45 @@
             ]
           });
 
-          /******** other event ********/
-          if(window.chrome.webview){
 
-            const updated$ = fromEvent(window.chrome.webview, 'updated');
+          /******** dorp event ********/
+
+          ( wv 
+            ? from(onDrop).pipe( switchMap( e => merge( of(e).pipe(delay(100)), fromEvent(wv, 'newWindowReq')).pipe(first()) ))
+            : from(onDrop).pipe( tap(e => { e.event.stopPropagation(); e.event.preventDefault(); }) )
+          ).subscribe( async e => {
+            const key = `${ onDrop.value.type }_${ e.event.constructor.name }:${ e?.detail?.type ?? e.event.dataTransfer.items[0].kind }`;
+            switch(key){
+              case 'terminal_DragEvent:string': {
+                const url = await (()=> new Promise(resolve => e.event.dataTransfer.items[0].getAsString(data => resolve(data))))();
+                pty.input(JSON.stringify(url))
+              } break;
+              case 'terminal_DragEvent:file': { pty.input(JSON.stringify(e.event.dataTransfer.items[0].getAsFile().name)) } break; // cannot read full path
+              case 'terminal_CustomEvent:file': { pty.input(JSON.stringify(e?.detail?.payload)) } break;
+              case 'terminal_CustomEvent:http': { pty.input(JSON.stringify(e?.detail?.payload)) } break;
+              case 'canvas_DragEvent:string': {
+                const url = await (()=> new Promise(resolve => e.event.dataTransfer.items[0].getAsString(data => resolve(data))))();
+                pty.input(`read ${JSON.stringify(url)}`)
+              } break;
+              case 'canvas_DragEvent:file': { pty.input(`read ${JSON.stringify(e.event.dataTransfer.items[0].getAsFile().name)}`) } break; // cannot read full path
+              case 'canvas_CustomEvent:file': { pty.input(`read ${JSON.stringify(e?.detail?.payload)}`) } break;
+              case 'canvas_CustomEvent:http': { pty.input(`read ${JSON.stringify(e?.detail?.payload)}`) } break;
+              default: console.error(`unknown type in drop event : ${key}`); break;
+            }
+            // pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
+            // case 'file': { await pty.input(`read ${e.detail.payload}`, "execute") } break;
+          });
+
+          /******** other event ********/
+          if(wv){
+
+            fromEvent(wv, 'write').subscribe((e) => { pty.log(`${e.detail}`); });
+            fromEvent(wv, 'prompt').subscribe(async () => { await customPrompt(); });
+
+            const updated$ = fromEvent(wv, 'updated');
             updated$.subscribe(async (e) => { console.log('updated', e); });
 
-            const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
+            const namedPipe$ = fromEvent(wv, 'namedPipe');
             namedPipe$.subscribe(e => { console.log("namedPipe", e) });
 
           }
@@ -376,26 +368,26 @@
           /******** onMounted ********/
           onMounted(async () => {
             console.log('app mounted')
-
             termShow.value = true;
             zoom.value = 0;
             rawState.value = { ...rawState.value };
-
+            isBusy.value = false;
             nextTick(() => { console.log('app rendered'); });
           });
-          return { 
+          return {
+            isBusy,
             termShow, contextList, 
             onMousemove, onContextmenu, onDrop, onWheel,
             canvasRef, contextRef, stalkerRef,
-            termRef, onTermMounted, beforeOnKey, onChange, onSubmit,
+            termRef, onTermMounted, pty,
             zoom, selected, rendering,
             testRef
           }
         }
       });
-      app.component('vue-pane', window.splitpanes.Pane);
-      app.component('vue-split-pane', window.splitpanes.Splitpanes);
 
+      app.component('vue-pane', Pane);
+      app.component('vue-split-pane', Splitpanes);
       app.component('context-menu', contextmenu);
       app.component('mouse-stalker', stalker);
       app.component('canvas-ex', canvasEx);

@@ -1,17 +1,20 @@
 # History
 
 ## 0.1.6 / huazhi 0.1.4 (2024--)
-termを仮想ターミナルptyに分離して、rustとの切り替え準備
-クリップボードコピーに\n含まれてた時の扱い
-actionのロジックをdicに変えてlist表示できるように
-JSDocの適用拡大
+- change : Separate terminal logic blocks terminal ```pty```
+- change : history/cursor select&copy&paste/scroll/drop logic in terminal
+- add : hashmap(command) in terminal logic blocks
+- add : JSDoc
+
+selectで範囲指定した際に、stokerの方でcontextが反映されない
+stakerの差し替え機構
 ## 0.1.5 / huazhi 0.1.3 (2024-06-09)
 - change : terminal ```onKey```, ```onMount```, call prompt logic
 - change : clip canvas logic (ref zoomfactor)
 - enable : ```ps``` command
 - add : ```cd``` command
 - add : from_np, from_array
-- add : Extension of starturl / ```file:///```, ```local:///```, ```resource:///```
+- add : Extension of starturl / ```file:```, ```local:```, ```resource:```
 ## 0.1.4 (2024-06-08)
 - add : py example
 - fix : shortcut, context menu, ```toHex```
@@ -41,3 +44,5 @@ JSDocの適用拡大
 - mmf, memorymapped for scripting
 - WebAssembly
 - scripting in hraw
+- 文字列のnull処理
+- クリップボードコピーに\n含まれてた時の扱い

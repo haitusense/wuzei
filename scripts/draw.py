@@ -6,7 +6,8 @@ def main(args):
   Px = Pixel #type: ignore
   print('args   :', args)
   mat = Px.to_np()
-  mat[0::2, 0::2].fill(0)
+  mat[0::2, 0::2].fill(0)     # RGGR だと R
+  mat[10:20, 10:20].fill(255) # 矩形の塗りつぶし
   Px.from_np(mat)
 
   hoge = random.randint(0, 255)

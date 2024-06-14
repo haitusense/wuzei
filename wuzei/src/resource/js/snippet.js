@@ -43,12 +43,8 @@ async function loadJs(path) {
   return window;
 }
 
-
-// console.log("terminal.js")
-
+// Termの古いコード
 (function(){
-  const { createApp, ref, onMounted, nextTick } = window.Vue;
-
   class LinelocalStorage {
     static prefix = "line";
     static buffer_num = 99;
@@ -100,24 +96,7 @@ async function loadJs(path) {
     open() {
       console.log("xterm opened")
   
-      this.terminal = new window.Terminal({ 
-        // rows: 3, 
-        // cols: 3,
-        fontSize: 12,
-        fontFamily: "Consolas, 'Courier New', monospace",
-        RendererType: 'canvas',
-      });
-      this.fitAddon = new window.FitAddon.FitAddon()
-      this.terminal.loadAddon(this.fitAddon);
-      // this.SearchAddon = new window.SearchAddon.SearchAddon()
-      // this.terminal.loadAddon(this.SearchAddon);
-  
-      if (this.terminal._initialized) { return; }
-      this.terminal._initialized = true;
-      this.terminal.prompt = ()=>{
-      
-      };
-      
+      /* ... */
       this.terminal.onKey(async e => {
         switch(`${e.domEvent.ctrlKey ? 'ctrl+' : ''}${e.domEvent.key}`){
           /* js側で処理したいkey actionはここで処理 */
@@ -152,20 +131,6 @@ async function loadJs(path) {
       this.prompt();
     }
   
-    show(id) {
-      this.terminal.open(document.getElementById(id));
-      const imageContainerObserver = new ResizeObserver((entries) => {
-        entries.forEach((entry) => {
-          // console.log(entry.contentRect.height, entry.contentRect.width)
-          this.fitAddon.fit();
-          this.terminal.scrollToBottom();
-        });
-      });
-      imageContainerObserver.observe(document.getElementById(id));
-      this.fitAddon.fit();
-      this.terminal.scrollToBottom();
-    }
-  
     cursor() { return this.terminal.buffer.active.cursorX - this.prompt_str.length; }
     prompt() {
       if(this.linestorage.current_line.length > 0){
@@ -176,21 +141,6 @@ async function loadJs(path) {
       this.linestorage.current_line = '';
     }
   
-    // term.reset()
-    async fetch(type, args) {
-      const response = await fetch("http://wuzei.localhost/terminal", { 
-        method: "POST",
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          { 
-            type: type,
-            payload: args
-          }
-        )
-      });
-      const dst = await response.text();
-      return dst;
-    }
     async send(src) {
       this.linestorage.regist(src);
   
@@ -204,37 +154,6 @@ async function loadJs(path) {
       const bubbling = await this.action(e);
       if(bubbling) {
         switch(e.type) {
-          case null:
-            break;
-          case 'echo':
-            this.writeln(`${e.payload.join(' ')}`);
-            break;
-          case 'sleep':
-            window.ipc.postMessage(JSON.stringify({ type: "sleep", payload:[] }));
-            break;
-          case 'clear':
-            this.terminal.clear();
-            break;
-          case 'history':
-            this.linestorage.history().forEach(n=>{
-              this.writeln(n);
-            });
-            break;
-          case 'cmd': {
-            const dst = await this.fetch('cmd', result);
-            this.writeln(`${dst}`);
-            }
-            break;
-          case 'title':
-            window.ipc.postMessage(JSON.stringify({ type: "title", payload: e.payload.join(' ') }));
-            break;
-          default:{
-            // const dst = await this.fetch('ps', result);
-            const dst = await this.fetch(result[0], result.slice(1));
-            this.writeln(`${dst}`);
-            // this.writeln(`The term '${e.type}' is not recognized as a name of a cmdlet, function, script file, or executable program.`);
-            }
-            break;
         }
       }
       //       case 'test' : {
@@ -284,29 +203,124 @@ async function loadJs(path) {
         はいまいち
       */
     }
-
-  
-    app(obj) { return {
-      template: `
-        <div id="terminal" style="height: 100%;"> </div>
-      `,
-      data() {
-        return {
-          // count: 0
-        }
-      },
-      setup() {
-        onMounted(() => {
-          obj.show('terminal')
-          nextTick(() => { });
-        })
-        return {  }
-      }
-    }}
   }
-
-  window.wterm = new Term();
 }());
+
+// termの古いコード
+{
+  /**
+   * @param {string} src
+   * @returns {string}
+   */
+  function _syntaxHighlighting(src){
+    const matches = splitcom(src);
+    // if(matches[0]?.captured){
+    //   return src.replace(matches[0].captured, `\x1B[38;5;226m${matches[0].captured}\x1B[0m`)
+    // }
+
+    let dst = "";
+    let flag = false;
+    for (const match of matches) {
+      if(!flag && match.full.trim() === ""){
+        dst += match.full
+        continue;
+      }else if(!flag && match.full.trim() !== ""){
+        flag = true
+        dst += `\x1B[38;5;226m${match.full}\x1B[0m`
+        continue;
+      }else if(match.full.startsWith('\"') || match.full.startsWith('\'')){
+        dst += `\x1B[38;5;39m${match.full}\x1B[0m`
+      }else if(match.full.startsWith('-')){
+        dst += `\x1B[38;5;248m${match.full}\x1B[0m`
+      }else{
+        dst += match.full
+      }
+    }
+    return dst;
+  }
+}
+
+// 使いたい機能
+{
+      // Navigator.serial 使いたい
+      // Navigator.storage 役立ちそう
+      // Navigator.virtualKeyboard 役立ちそう
+      // Navigator.windowControlsOverlay vscodeとかのタイトルバーみたい
+      // callback(`${JSON.stringify(window.navigator.mimeTypes)}\r\n`)
+      // Navigator.share ファイル共有とかデバイス間の情報送りとか？
+
+      // 機能しない
+      (async ()=>{
+        console.log("hid")
+        let devices = await navigator.hid.getDevices();
+        devices.forEach((device) => {
+          console.log(`HID: ${device.productName}`);
+        });
+      })();
+
+      navigator.mediaDevices
+        .enumerateDevices()
+        .then((devices) => {
+          devices.forEach((device) => {
+            console.log(`${device.kind}: ${device.label} id = ${device.deviceId}`);
+          });
+        })
+        .catch((err) => {
+          console.error(`${err.name}: ${err.message}`);
+        });
+
+    
+
+      if ("virtualKeyboard" in navigator) {
+        const editor = document.getElementById("editor");
+        const editButton = document.getElementById("edit-button");
+        let isEditing = false;
+
+        editButton.addEventListener("click", () => {
+          if (isEditing) {
+            navigator.virtualKeyboard.hide();
+            editButton.textContent = "Edit";
+          } else {
+            editor.focus();
+            navigator.virtualKeyboard.show();
+            editButton.textContent = "Save changes";
+          }
+
+          isEditing = !isEditing;
+        });
+      }
+
+      navigator.share({
+        title: 'web.dev',
+        text: 'Check out web.dev.',
+        url: 'https://web.dev/',
+      })
+      .then(() => console.log('Successful share'))
+      .catch((error) => console.log('Error sharing', error));
+
+            //@ts-check　でエラーが出るので
+      replaceAll("\n","\e\n") -> replace(/\n/g, '\r\n')
+}
+  /* つかってないコード
+  #cursorPos = () => this.#terminal.buffer.active.cursorX - this.#prompt_str.length
+
+     log(src){
+      this.write(`\x1b[0G\x1b[2K${src}\r\n`)
+      this.#newCurrentLine(this.pty.current_line.length)
+    }
+
+      const clear = () => { 
+      // localStorage.removeItem('wterm_buffer')
+      terminal.clear()
+      terminal.scrollToBottom();
+      pty.prompt()
+    }
+  */  
+  /*
+  const pty = node_pty.spawn(shell, [], {...}); // 仮想ターミナルの作成
+  pty.onData(recv => terminal.write(recv));     // 仮想ターミナルからの出力をターミナルに表示
+  terminal.onData(send => pty.write(send));     // ターミナルの入力を仮想ターミナルに流す
+  */
 
 
 /*

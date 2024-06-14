@@ -242,39 +242,29 @@ const canvasEx = {
     });
     
     /* drop */
-    fromEvent(divRef, 'dragenter').subscribe(e => {
-      e.preventDefault();
-      canvasRef.value.style.opacity = 0.65
-    });
-    fromEvent(divRef, 'dragleave').subscribe(e => {
-      e.preventDefault();
-      if (!e.currentTarget.contains(e.relatedTarget)) {
-        canvasRef.value.style.opacity = 1
-      }
-    });
-    fromEvent(divRef, 'dragover').subscribe(e => {
-      e.stopPropagation();
-      e.preventDefault();
-    });
-
-    // drop -> newWindowReqの順
-    //@ts-ignore
-    if(window.chrome.webview){
-      fromEvent(divRef, 'drop').pipe(
-        //@ts-ignore
-        switchMap((e) => merge( of(e).pipe(delay(100)), fromEvent(window.chrome.webview, 'newWindowReq')).pipe(first()) )
-      ).subscribe(e => {
+    {
+      fromEvent(divRef, 'dragenter').subscribe(e => {
+        e.preventDefault();
+        canvasRef.value.style.opacity = 0.65
+      });
+      fromEvent(divRef, 'dragleave').subscribe(e => {
+        e.preventDefault();
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+          canvasRef.value.style.opacity = 1
+        }
+      });
+      fromEvent(divRef, 'dragover').subscribe(e => {
+        e.stopPropagation();
+        e.preventDefault();
+      });
+      fromEvent(divRef, 'drop').subscribe(e => {
         emit('on-drop', e)
+        canvasRef.value.style.opacity = 1
       })
-    }else{
-      fromEvent(divRef, 'drop').subscribe(async e => {
-        e.stopPropagation(); // 親への伝播をとめる
-        e.preventDefault();  //イベントのキャンセル
-        const file = e.dataTransfer.files[0].name;
-        console.log(file)
-      })
+
+  
     }
-    
+
     /* contextmenu */
     fromEvent(divRef, 'contextmenu').subscribe( e => { 
       const real = convertClientToReal(canvasRef.value, e);

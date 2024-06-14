@@ -8,7 +8,7 @@ def lineprof(df, x, y, z):
   dst = df.iloc[x::2, y::2].mean(axis=z).to_frame()
   dst.columns = ["data"]
   dst["index"] = dst.index
-  dst['dt_rolling'] = dst['data'].rolling(5).mean() - dst['data']
+  dst['dt_rolling'] = dst['data'].rolling(5, center=True).mean() - dst['data']
   dst['dt'] = dst['data'].diff()
   print(dst)
   return dst
