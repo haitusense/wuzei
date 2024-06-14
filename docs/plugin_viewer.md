@@ -89,6 +89,32 @@ ps> wuzei.exe -s resource:viewer.html
     R G B A
 ```
 
+customize the display from the terminal
+
+```powershell
+terminal> state
+# ...
+# otherState : {
+#   ...
+#   "stalker": "(e) => e + 0"
+# }
+
+terminal> set stalker "(e) => e / 100"
+terminal> state
+# ...
+# otherState : {
+#   ...
+#   "stalker": "(e) => e / 100"
+# }
+
+# src = 1234567
+#   "(e) => e / 100"                             -> 12345.67
+#   "(e) => e.toLocaleString('en-IN')"           -> 1,234,567
+#   "(e) => '0x' + e.toString(16).toUpperCase()" -> 0x12D687
+#   "(e) => (0 & 0b1111)"                        -> 7
+```
+
+
 #### disable
 
 - send from namedpipe or prompt-dialog
