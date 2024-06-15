@@ -1,15 +1,15 @@
 //@ts-check
 
 //@ts-ignore
-const { ref, nextTick, onMounted, computed } = window.Vue;
+const [ Vue, rxjs, VueUse ] = [ window.Vue, window.rxjs, window.VueUse ];
+
+const { ref, nextTick, onMounted, computed } = Vue;
 const { /* from */ /* fromEvent */ of, merge, partition,
   filter, first, delay, map, takeUntil, debounceTime, scan,
   bufferToggle, switchMap, mergeMap,  
   share, tap
-//@ts-ignore
-} = window.rxjs;
-//@ts-ignore
-const { from, fromEvent } = window.VueUse;
+} = rxjs;
+const { from, fromEvent } = VueUse;
 
 /**
  * @param {any} target
@@ -49,14 +49,55 @@ const drawRect = (ref, margin, left, top, right, bottom) => {
   ctx.closePath();
 }
 
+/**
+ * @class
+ */
 class Rect {
+
   constructor(start, end) {
     this.start = start
     this.end = end
   }
-  static setPos(start, end){
-    return new Rect(start, end)
+
+  get left() { return this.start.x < this.end.x ? this.start.x : this.end.x; }
+  get top() { return this.start.y < this.end.y ? this.start.y : this.end.y; }
+  get right() { return  this.start.x > this.end.x ? this.start.x : this.end.x; }
+  get bottom() { return this.start.y > this.end.y ? this.start.y : this.end.y; }
+
+  /**
+   * @returns {Rect}
+   */
+  static new(){
+    return new Rect(
+      {x:0, y:0}, 
+      {x:0, y:0}
+    );
   }
+
+  /**
+   * @param {number} left
+   * @param {number} top
+   * @param {number} right
+   * @param {number} bottom
+   * @returns {Rect}
+   */
+  static set4point(left, top, right, bottom){
+    return new Rect(
+      {x:left, y:top}, 
+      {x:right, y:bottom}
+    );
+  }
+
+  /**
+   * @param {{x:number, y:number}} start
+   * @param {{x:number, y:number}} end
+   * @returns {Rect}
+   */
+  static set2postion(start, end){ return new Rect(start, end); }
+
+  /**
+   * @returns {any}
+   */
   get(){
     const left = this.start.x < this.end.x ? this.start.x : this.end.x;
     const top = this.start.y < this.end.y ? this.start.y : this.end.y;
@@ -71,6 +112,18 @@ class Rect {
       height: bottom - top,
     }
   }
+
+  /**
+   * @returns {string}
+   */
+  to_json(){
+    return JSON.stringify({
+      left: this.left,
+      top: this.top,
+      right: this.right,
+      bottom: this.bottom,
+    })
+  }
 }
 
 const styledObj = {
@@ -83,6 +136,11 @@ const styledObj = {
   }
 }
 
+/**
+ * props : margin, zoom, select, rendering \
+ * methods : redraw, clip \
+ * emit : on-context, on-move, on-drop, update:zoom, update:select \
+ */
 const canvasEx = {
   template: `
     <div id="canvas" ref="divRef" style="position:absolute; top:0;left:0;right:0;bottom:0;">
@@ -106,7 +164,7 @@ const canvasEx = {
   props: {
     margin: { type: Number, default: 10, required: false },
     zoom: { type: Number, default: 1, required: false },
-    select: { type: Object, default: { left:0, top:0, right:0, bottom:0 }, required: false },
+    select: { type: Object, default: Rect.new(), required: false },
     rendering: { type: String, default: 'pixelated', required: false },
   },
   watch: {
@@ -126,11 +184,10 @@ const canvasEx = {
     },
     clip(selectflag){
       const scaleFactor = this.cnvParams.zoomfactor;
-      const sel = this.select;
-      const x = selectflag ? sel.left : 0
-      const y = selectflag ? sel.top : 0
-      const w = selectflag ? sel.right - sel.left : this.canvasRef.width
-      const h = selectflag ? sel.bottom - sel.top : this.canvasRef.height
+      const x = selectflag ? this.select.left : 0
+      const y = selectflag ? this.select.top : 0
+      const w = selectflag ? this.select.right - this.select.left : this.canvasRef.width
+      const h = selectflag ? this.select.bottom - this.select.top : this.canvasRef.height
 
       const temp = document.createElement('canvas');
       temp.width = w * scaleFactor;
@@ -149,31 +206,21 @@ const canvasEx = {
       console.log("clipboard")
     }
   },
-
-  /*
-    emit : 
-      on-context, on-move, on-drop,
-      update:zoom
-    defineModel : つかわない
-  */
   setup(props, { emit }) {
     const styled = ref(styledObj.canvas)
     const [divRef, canvasRef, selectRef] = [ref(null), ref(null), ref(null)];
-    const [selected] = [ref(Rect.setPos({x:0,y:0}, {x:0,y:0}))]; // real pos
+
     const cnvParams = ref({ width:320, height:240, zoomfactor:1 });
 
     const zoom = computed({ get: () => props.zoom, set: (val) => emit("update:zoom", val) });
     const select = computed({ get: () => props.select, set: (val) => emit("update:select", val) });
-
+    // const [select] = [ref(Rect.set2postion({x:0,y:0}, {x:0,y:0}))]; // real pos
     from(zoom).subscribe(e => { cnvParams.value = { ...cnvParams.value, zoomfactor : 1.2 ** e }; });
-    from(select).subscribe(e => { drawRect(selectRef, props.margin, e.left, e.top, e.right, e.bottom) });
-
-    from(cnvParams).subscribe((e) => {  });
-    from(selected).subscribe((e) => {
-      const {left, top, right, bottom} = e.get();
-      select.value = { left, top, right, bottom };
+    from(select).subscribe(e => { 
+      drawRect(selectRef, props.margin, e.left, e.top, e.right, e.bottom) 
     });
 
+    from(cnvParams).subscribe((e) => {  });
 
     /******** mouse event ********/
     const mousemove$ = fromEvent(selectRef, 'mousemove').pipe(map(e => e), share());
@@ -197,13 +244,13 @@ const canvasEx = {
       map(e => convertClientToReal(canvasRef.value, e)),
       tap(e => { 
         // stalkerRef.value.show({unModified : `(${e.realX},${e.realY})`})
-        selected.value = Rect.setPos({x:e.x, y:e.y}, {x:e.x, y:e.y})
+        select.value = Rect.set2postion({x:e.x, y:e.y}, {x:e.x, y:e.y})
       }),
       mergeMap(start => mousemove_1$.pipe(
         map(e => convertClientToReal(canvasRef.value, e)),
         tap(end => { 
           // stalkerRef.value.show({unModified : `(${e.end.realX},${e.end.realY})`})
-          selected.value = Rect.setPos(start, end)
+          select.value = Rect.set2postion(start, end)
         }),
         takeUntil(mouseup$),
       ))
@@ -260,15 +307,13 @@ const canvasEx = {
       fromEvent(divRef, 'drop').subscribe(e => {
         emit('on-drop', e)
         canvasRef.value.style.opacity = 1
-      })
-
-  
+      });
     }
 
     /* contextmenu */
     fromEvent(divRef, 'contextmenu').subscribe( e => { 
       const real = convertClientToReal(canvasRef.value, e);
-      const {left, top, width, height} = selected.value.get();
+      const {left, top, width, height} = select.value.get();
       const x = left < real.x && real.x < left + width;
       const y = top < real.y && real.y < top + height;
       emit('on-context', e, {
@@ -291,10 +336,9 @@ const canvasEx = {
       props, 
       cnvParams,
       divRef, canvasRef, selectRef, styled,
-      selected,
+      select,
     }
   }
 }
 
-export { canvasEx };
-
+export { canvasEx, Rect };

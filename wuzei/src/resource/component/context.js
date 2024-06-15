@@ -1,11 +1,19 @@
-const { ref, onMounted } = window.Vue;
-const { /* from */ /* fromEvent */ of, merge, partition,
-  filter, first, delay, map, takeUntil, debounceTime, scan,
-  bufferToggle, switchMap, mergeMap,  
-  share, tap
-} = window.rxjs;
-const { fromEvent } = window.VueUse;
+/**
+ * context.js
+ */
+//@ts-check
 
+//@ts-ignore
+const [ Vue, rxjs, VueUse ] = [ window.Vue, window.rxjs, window.VueUse ]
+const { ref } = Vue;
+const {     } = rxjs;
+const { fromEvent } = VueUse;
+
+/**
+ * props   : items \
+ * methods : show, close \
+ * emit    : on-click \
+ */
 const contextmenu = {
   template: `
     <div
@@ -30,9 +38,6 @@ const contextmenu = {
     },
     close() { this.display = "none"; },
   },
-  /*
-    emit : on-click
-  */
   setup(props, { emit }) {
     const [left, top, display] = [ref("100px"), ref("100px"), ref("none")]
     const contextitems = ref({})

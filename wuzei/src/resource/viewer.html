@@ -28,7 +28,7 @@
             :margin="20"
             ref = "canvasRef"
             :zoom="zoom" @update:zoom="$event => (zoom = $event)"
-            :select="selected" @update:select="$event => (selected = $event)"
+            :select="select" @update:select="$event => (select = $event)"
             :rendering="rendering ? 'pixelated' : 'auto'"
             @on-drop="(e)=>{ onDrop = { type : 'canvas', event : e }}"
             @on-context="onContextmenu"
@@ -38,13 +38,13 @@
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
-          <my-terminal ref="termRef"
+          <hai-terminal ref="termRef"
             :pty="pty"
             :before-on-key="(e) =>{ return true; }"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
             @on-drop="(e)=>{ onDrop = { type : 'terminal', event : e }}"
-          ></terminal>
+          ></hai-terminal>
         </vue-pane>
       </vue-split-pane>
       <!-- context-menu / mouse-stalker -->
@@ -61,8 +61,8 @@
       const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
       import { indoc, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, setState, readFile } from "./js/lib.js"
-      import { wtermComponent, WPty } from "./component/wterm.js"
-      import { canvasEx } from "./component/canvas-ex.js"
+      import { haitermComponent, WPty } from "./component/haiterm.js"
+      import { canvasEx, Rect } from "./component/canvas-ex.js"
       import { contextmenu } from "./component/context.js"
       import { stalker } from "./component/stalker.js"
 
@@ -96,14 +96,14 @@
             subpath: "data.raw",
             stalker : "(e) => e + 0"
           });
-          const [zoom, selected, rendering] = [ref(null), ref(null), ref(true)];
+          const [zoom, select, rendering] = [ref(null), ref(Rect.new()), ref(true)];
           
           /******** busy ********/
           from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
 
           /* to sk */
           from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
-          from(selected).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
+          // from(select).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
 
           from(rawState).subscribe(async e => {
             stalkerRef.value.intext('shift+0', `bitshift : ${e.bitshift}\r\ncolor : ${e.color}`)
@@ -124,17 +124,21 @@
             }},
             
             'select' : { 'type': 'function', 'func': async (e, callback) =>{
-              selected.value = {
-                left: Number(e.payload[0]), 
-                top: Number(e.payload[1]),
-                right: Number(e.payload[2]),
-                bottom:Number(e.payload[3])
-              }
+              select.value = Rect.set4point(
+                Number(e.payload[0]), 
+                Number(e.payload[1]),
+                Number(e.payload[2]),
+                Number(e.payload[3])
+              );
+            }},
+            'clip' : { 'type': 'function', 'func': async (e, callback) =>{
+              canvasRef.value.clip(false);
+            }},
+            'clip-selected' : { 'type': 'function', 'func': async (e, callback) =>{
+              canvasRef.value.clip(true);
             }},
             'zoom' : { 'type': 'action', 'func': async (e, callback) =>{
               zoom.value = Number(e.payload[0])
-              // termRef.value.write(`zoom : ${e.payload}`);
-              // canvasRef.value.zoom(e.payload)
             }},
             'bitshift' : { 'type': 'function', 'func': async (e, callback) =>{
               rawState.value = {...rawState.value, bitshift: Number(e.payload[0])}
@@ -163,9 +167,9 @@
               otherState.value.path = e.payload[0];
               await readFile(e.payload[0], otherState.value.subpath)
               rawState.value = { ...rawState.value }
-            // const image = await asyncPostPng(rawState.value)
-            // canvasRef.value.redraw(image);
-            // window.wterm.inputln(`echo ${e.detail.payload}`);
+              // const image = await asyncPostPng(rawState.value)
+              // canvasRef.value.redraw(image);
+              // window.haiterm.inputln(`echo ${e.detail.payload}`);
             }},
 
             'js1' : { 'type': 'function', 'func': async (e, callback) =>{
@@ -293,32 +297,25 @@
           }
           const contextList = reactive({
             "IN" : [
-              { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true); } },
-              { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(selected.value)); } },
-              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ pty.input(`'${JSON.stringify(selected.value)}'`, true)  } },
-              { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ pty.input(`'${JSON.stringify(selected.value)}'`) } },
-              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ pty.input(`py scripts/script.py '${JSON.stringify(selected.value)}'`, true) } },
+              { type : 'div', value: 'Clip Image', action: (e)=>{ pty.input("clip-selected", 'execute') } },
+              { type : 'div', value: 'Clip Coord', action: (e)=>{ navigator.clipboard.writeText(select.value.to_json()); } },
+              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ pty.input(` '${select.value.to_json()}'`, 'append'); } },
               { type : 'hr' },
-              { type : 'div', value: 'Send clip.py To Terminal', action: (e)=>{ 
-                pty.input(`py scripts/clip.py '${JSON.stringify(selected.value)}'`, 'execute') 
+              { type : 'div', value: 'execute clip.py', action: (e)=>{ 
+                pty.input(`py scripts/clip.py '${JSON.stringify(select.value.get())}'`, 'execute') 
               } },
-              { type : 'div', value: 'Send clip_png.py To Terminal', action: (e)=>{ 
-                pty.input(`py scripts/clip_png.py '${JSON.stringify(selected.value)}'`, 'execute')
+              { type : 'div', value: 'execute clip_png.py', action: (e)=>{ 
+                pty.input(`py scripts/clip_png.py '${JSON.stringify(select.value.get())}'`, 'execute')
               } },
-              { type : 'div', value: 'Send stat.py To Terminal', action: (e)=>{ 
-                pty.input(`py scripts/stat.py '${JSON.stringify(selected.value)}'`, 'execute') 
-              } },
-              { type : 'div', value: 'Send hist.py To Terminal', action: (e)=>{ 
-                pty.input(`py scripts/hist.py '${JSON.stringify(selected.value)}'`, 'execute') 
-              } },
-              { type : 'div', value: 'Send draw.py To Terminal', action: (e)=>{ 
-                pty.input(`py scripts/draw.py '${JSON.stringify(selected.value)}'`, 'execute')
+              { type : 'hr' },
+              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ pty.input(`py scripts/script.py '${select.value.to_json()}'`, 'append') } },
+              { type : 'div', value: 'execute draw.py', action: (e)=>{ 
+                pty.input(`py scripts/draw.py '${JSON.stringify(select.value.get())}'`, 'execute')
                 pty.input("refresh", 'execute');
               } },
             ],
             "OUT" : [
-              { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false); } },
-              { type : 'div', value: 'Dummy', action: (e)=>{ console.log('Dummy', e) } },
+              { type : 'div', value: 'Copy Full', action: (e)=>{ pty.input("clip", 'execute') } },
             ]
           });
 
@@ -330,25 +327,29 @@
             : from(onDrop).pipe( tap(e => { e.event.stopPropagation(); e.event.preventDefault(); }) )
           ).subscribe( async e => {
             const key = `${ onDrop.value.type }_${ e.event.constructor.name }:${ e?.detail?.type ?? e.event.dataTransfer.items[0].kind }`;
+            const e_to_url = async (ev) => JSON.stringify(await (()=> new Promise(resolve => ev.event.dataTransfer.items[0].getAsString(data => resolve(data))))() );
+            const e_to_name = (ev) => JSON.stringify(ev.event.dataTransfer.items[0].getAsFile().name); // cannot read full path
+            const e_to_path = (ev) => JSON.stringify(ev?.detail?.payload);
             switch(key){
-              case 'terminal_DragEvent:string': {
-                const url = await (()=> new Promise(resolve => e.event.dataTransfer.items[0].getAsString(data => resolve(data))))();
-                pty.input(JSON.stringify(url))
+
+              case 'terminal_DragEvent:string': { pty.input(await e_to_url(e)); } break;
+              case 'terminal_DragEvent:file': { pty.input(e_to_name(e)); } break; 
+              case 'terminal_CustomEvent:file': { pty.input(e_to_path(e)); } break;
+              case 'terminal_CustomEvent:http': { pty.input(e_to_path(e)); } break;
+
+              case 'canvas_DragEvent:string': { pty.input(`read ${await e_to_url(e)}`, 'overwrite') } break;
+              case 'canvas_DragEvent:file': { pty.input(`read ${e_to_name(e)}`, 'overwrite') } break;
+              case 'canvas_CustomEvent:file': { 
+                
+                pty.input(`read ${e_to_path(e)}`, 'overwrite') 
+                          // pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
+            // case 'file': { await pty.input(`read ${e.detail.payload}`, "execute") } break;
               } break;
-              case 'terminal_DragEvent:file': { pty.input(JSON.stringify(e.event.dataTransfer.items[0].getAsFile().name)) } break; // cannot read full path
-              case 'terminal_CustomEvent:file': { pty.input(JSON.stringify(e?.detail?.payload)) } break;
-              case 'terminal_CustomEvent:http': { pty.input(JSON.stringify(e?.detail?.payload)) } break;
-              case 'canvas_DragEvent:string': {
-                const url = await (()=> new Promise(resolve => e.event.dataTransfer.items[0].getAsString(data => resolve(data))))();
-                pty.input(`read ${JSON.stringify(url)}`)
-              } break;
-              case 'canvas_DragEvent:file': { pty.input(`read ${JSON.stringify(e.event.dataTransfer.items[0].getAsFile().name)}`) } break; // cannot read full path
-              case 'canvas_CustomEvent:file': { pty.input(`read ${JSON.stringify(e?.detail?.payload)}`) } break;
-              case 'canvas_CustomEvent:http': { pty.input(`read ${JSON.stringify(e?.detail?.payload)}`) } break;
+              case 'canvas_CustomEvent:http': { pty.input(`read ${e_to_path(e)}`, 'overwrite') } break;
+  
               default: console.error(`unknown type in drop event : ${key}`); break;
             }
-            // pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
-            // case 'file': { await pty.input(`read ${e.detail.payload}`, "execute") } break;
+
           });
 
           /******** other event ********/
@@ -380,7 +381,7 @@
             onMousemove, onContextmenu, onDrop, onWheel,
             canvasRef, contextRef, stalkerRef,
             termRef, onTermMounted, pty,
-            zoom, selected, rendering,
+            zoom, select, rendering,
             testRef
           }
         }
@@ -391,7 +392,7 @@
       app.component('context-menu', contextmenu);
       app.component('mouse-stalker', stalker);
       app.component('canvas-ex', canvasEx);
-      app.component('my-terminal', wtermComponent);
+      app.component('hai-terminal', haitermComponent);
       app.mount('#app');
     </script>
   </body>

@@ -1,13 +1,15 @@
+/**
+ * haiterm.js ver 0.1.0
+ */
 //@ts-check
 
 //@ts-ignore
-const { onMounted, nextTick, onUnmounted, ref } = window.Vue;
-//@ts-ignore
-const { /* from */ /* fromEvent */ of, merge, filter, first, delay, switchMap } = window.rxjs;
-//@ts-ignore
-const { from, fromEvent } = window.VueUse;
+const [ Vue, rxjs, VueUse, Terminal, FitAddon ] = [ window.Vue, window.rxjs, window.VueUse, window.Terminal, window.FitAddon.FitAddon]
+const { onMounted, nextTick, onUnmounted, ref } = Vue;
+const { filter } = rxjs;
+const { fromEvent } = VueUse;
 
-/**************** ****************/
+/**************** ESC ****************/
 
 /** @enum {string} */
 const ESC = Object.freeze({
@@ -427,7 +429,7 @@ class WPty {
       });
       this.#onData(`*\x1B[48;5;025mHistory restored\x1B[0m\r\n`);
     }else{
-      this.#onData(`*\x1B[48;5;025mwelcome to wterm\x1B[0m\r\n`);
+      this.#onData(`*\x1B[48;5;025mwelcome to haiterm\x1B[0m\r\n`);
     }
   }
   /**
@@ -597,16 +599,10 @@ class WPty {
   #cmdlet = {
     'welcome' : { 'type': 'cmdlet', 'func':(e, callback) =>{
       const env = {
-        hardwareConcurrency : window.navigator.hardwareConcurrency,
         language : window.navigator.language,
-        languages : window.navigator.languages,
-        maxTouchPoints : window.navigator.maxTouchPoints ,
-        onLine  : window.navigator.onLine,
-        pdfViewerEnabled : window.navigator.pdfViewerEnabled,
         userAgent  : window.navigator.userAgent,
-        //@ts-ignore
-        userAgentData  : window.navigator.userAgentData,
       }
+      // cybermedium
       callback(`${ESC.B+ESC.BOLD}`)
       callback("   ███   ███      ▄▄▄   ▄▄▄  ▄▄▄▄▄▄▄▄▄  ▄▄▄  ▄▄▄▄▄▄▄▄▄  ▄▄▄   ▄▄▄\r\n")
       callback("▄▄▄▀▀▀▄▄▄▀▀▀▄▄▄   ▀▀▀   ███  ▀▀▀▀▀▀███  ▀▀▀  ▀▀▀███▀▀▀  ▀▀▀   ███\r\n")
@@ -616,6 +612,26 @@ class WPty {
       callback("▀▀▀▄▄▄▀▀▀▄▄▄▀▀▀   ▀▀▀   ▀▀▀  ▀▀▀   ▀▀▀  ▀▀▀     ▀▀▀     ▀▀▀▀▀▀▀▀▀\r\n")
       callback(`   ███   ███           海       图       微       电       子     \r\n${ESC.DEF}`)
       callback(`                    haitusense Co.,Ltd. in Hefei China since 2018\r\n`)
+      callback(`${ESC.BOLD}`)
+      callback(' '.repeat(25) + String.raw`_  _  __  _ ___  ___  __  _  _    _ ___` + "\r\n")
+      callback(' '.repeat(25) + String.raw`|__| |__| |  |  |___ |__| |\/|    | [__ ` + "\r\n")
+      callback(' '.repeat(25) + String.raw`|  | |  | |  |  |___ |  \ |  | . _| ___]` + "\r\n")
+      callback(JSON.stringify(env, undefined, 2).replace(/\n/g, '\r\n'))
+    }},
+    'get-environment' : { 'type': 'cmdlet', 'func':(e, callback) =>{
+      // console.log(new Intl.Locale(window.navigator.language))
+      const env = {
+        hardwareConcurrency : window.navigator.hardwareConcurrency,
+        language : window.navigator.language,
+        languages : window.navigator.languages,
+        timeZones : Intl.DateTimeFormat().resolvedOptions(),
+        maxTouchPoints : window.navigator.maxTouchPoints ,
+        onLine  : window.navigator.onLine,
+        pdfViewerEnabled : window.navigator.pdfViewerEnabled,
+        userAgent  : window.navigator.userAgent,
+        //@ts-ignore
+        userAgentData  : window.navigator.userAgentData,
+      }
       callback(JSON.stringify(env, undefined, 2).replace(/\n/g, '\r\n'))
     }},
     'sleep' : { 'type': 'function', 'func': async (e, callback) =>{
@@ -676,13 +692,12 @@ class WPty {
       callback(`\r\n`)
     }},
     'history' : { 'type': 'cmdlet', 'func':(e, callback) =>{
-      const locale = (new Intl.Locale(window.navigator.language)).baseName;
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const label = `timestamp(${tz})`;
       const cnt = Math.max(19, label.length);
       const hist = this.#storage.history();
       callback(`${ESC.G}`)
-      callback(`  ${ label          }  CommandLine\r\n`);
+      callback(`  ${ label           }  CommandLine\r\n`);
       callback(`  ${ '-'.repeat(cnt) }  -----------\r\n`);
       callback(`${ESC.DEF}`)
       hist.forEach( n =>{
@@ -718,33 +733,35 @@ class WPty {
 
 /**************** Component ****************/
 
-const wtermComponent = {
-  template: `<div id="terminal" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>`,
+/**
+ * props   : fontSize, fontFamily. beforeOnKey, pty \
+ * methods : \
+ * emit    : on-change, on-submit, on-mounted, on-drop \
+ *   asyncでreturn欲しい場合はpropsでつなぐ
+ */
+const haitermComponent = {
+  template: `<div id="hai-term" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>`,
   data() { return { /* count: 0 */ } },
   props: {
+    fontSize: { type: [Number, String], default: 13 }, /*リアルタイムに反映させてないので再描画必要*/
+    fontFamily: { type: String, default: "Consolas, 'Courier New', monospace" },
     beforeOnKey: { type: Function }, /* asyncにしない */
     pty: { type: Object },
   },
   methods: { },
-  /*
-    emit: on-change, on-submit, on-mounted, on-drop
-    asyncでreturn欲しい場合はpropsでつなぐ
-  */
   setup(props, { emit }) {
-    console.log("setup term") /*毎回呼ばれる*/
+    console.log(`setup term`)
     const terminalRef = ref(null);
 
     /******** terminal ********/
     const pty = props.pty;
-    //@ts-ignore
-    const terminal = new window.Terminal({
-      fontSize: 12,
-      fontFamily: "Consolas, 'Courier New', monospace",
+    const terminal = new Terminal({
+      fontSize: Number(props.fontSize),
+      fontFamily: props.fontFamily,
       RendererType: 'canvas',
       theme: { /* foreground: 'yellow', */ }
     });
-    //@ts-ignore
-    const fitAddon = new window.FitAddon.FitAddon()
+    const fitAddon = new FitAddon()
     
     // init term
     {
@@ -752,12 +769,7 @@ const wtermComponent = {
       if (terminal._initialized) { return; }
       terminal._initialized = true;
 
-      // not use : terminal.prompt = () =>{ };
-      // not use : terminal.onData(e => { });
-      // not use : terminal.onCursorMove(e => { console.log("onCursorMove ", this.#terminal.buffer) });
-
-      // 強制スクロールがうまく抑制できないのでスクロール後に巻き戻し
-      let scrollFunc = undefined;
+      let scrollFunc = undefined; // 強制スクロールがうまく抑制できないのでスクロール後に巻き戻し
       terminal.onKey( e => { 
         /* 
           - asyncにするとgetSelection()が取れないことがあるので同期化
@@ -805,6 +817,19 @@ const wtermComponent = {
           } break;
           default: { pty.input(e); } break;
         }
+        /* rustで受ける際
+          window.ipc.postMessage(JSON.stringify({
+            altKey : e.domEvent.altKey,
+            ctrlKey : e.domEvent.ctrlKey,
+            metaKey : e.domEvent.metaKey,
+            shiftKey : e.domEvent.shiftKey,
+            key : e.domEvent.key,
+            charCode : e.domEvent.charCode,
+            code : e.domEvent.code,
+            keyCode : e.domEvent.keyCode,
+            selection : this.terminal.getSelection() // select外れるないように
+          })); 
+        */
       });
       terminal.onScroll(e =>{ 
         if(scrollFunc){
@@ -814,26 +839,18 @@ const wtermComponent = {
           buf(e);
         }
       });
+      // not use : terminal.prompt = () =>{ };
+      // not use : terminal.onData(e => { });
+      // not use : terminal.onCursorMove(e => { console.log("onCursorMove ", this.#terminal.buffer) });
 
-      // fromEvent(document, 'keydown').subscribe( e => {
-      //   console.log("ok",e)
-      // });
+      // fromEvent(document, 'keydown').subscribe( e => { console.log("ok",e) });
     }
     
     // init pty
     {
       pty.onData((e)=>{ terminal.write(e); })
       pty.onChange((e) => { emit('on-change', e) });
-      // pty.onSubmit((e) => { 
-      //   // 通常はemit
-      //   emit('on-submit', e)
-      //   
-      //   // formEventで拾う&bubblingしたいときはCustomEvent
-      //   terminalRef.value.dispatchEvent(new CustomEvent('action', {
-      //     bubbles: true,
-      //     detail: e
-      //   }));
-      // });
+      // pty.onSubmit((e) => { emit('on-submit', e) });
     }
 
     /******** method ********/
@@ -854,7 +871,6 @@ const wtermComponent = {
       imageContainerObserver.observe(elem);
       fitAddon.fit();
 
-      // restore
       terminal.clear();
       pty.restore();
       terminal.focus();
@@ -862,7 +878,7 @@ const wtermComponent = {
 
     const close = () =>{
       console.log("release terminal/pty")
-      // 入力時に書き込んでるのでterminalの内容を拾う必要ない
+      // 入力時に書き込んでるのでterminalの内容を拾う必要ない -> windowclose時の検討不必要
       // terminal.selectAll()
       // const buffer = terminal.getSelection().trim()
       terminal.dispose()
@@ -871,16 +887,16 @@ const wtermComponent = {
       pty.onChange((e) => { });
     }
 
-    /******** key event ********/
-    /* fromEventは何が流れてくるのか分かりにくいので未使用 */
-  
-    /******** mouse event ********/
+    /******** key/mouse event ********/
 
-    /* mousedown */
-    fromEvent(terminalRef, 'mousedown').pipe(filter(e=> e.buttons == 4)).subscribe(e => {
-      navigator.clipboard.readText().then((n) => pty.input(n) );
-      e.preventDefault();
-    });
+    /* keydown/mousedown */
+    {
+      /* fromEventは何が流れてくるのか分かりにくいので未使用 */
+      fromEvent(terminalRef, 'mousedown').pipe(filter(e=> e.buttons == 4)).subscribe(e => {
+        navigator.clipboard.readText().then((n) => pty.input(n) );
+        e.preventDefault();
+      });  
+    }
 
     /* drop */
     {
@@ -907,12 +923,12 @@ const wtermComponent = {
 
     /******** onMounted ********/
     onMounted(() => {
-      console.log('terminal mounted')
-      open('terminal');
+      console.log(`terminal mounted`)
+      open('hai-term');
       nextTick(() => { emit('on-mounted', null); });
     }),
     onUnmounted(() => {
-      console.log('terminal unmounted') // 常にlog書き込み -> windowclose時の検討不必要
+      console.log('terminal unmounted')
       close()
     })
     return { terminalRef, terminal, pty }
@@ -921,6 +937,6 @@ const wtermComponent = {
 
 /**************** export ****************/
 
-export { wtermComponent, WPty };
+export { haitermComponent, WPty };
 
 

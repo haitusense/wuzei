@@ -1,4 +1,4 @@
-# wterm
+# haiterm
 
 ## Description
 
@@ -9,11 +9,11 @@
 | function                               | mouse       | shotcut-key       |
 | :--                                    | :--:        | :--:              |
 | select text with mouse                 | left + move |                   |
-| select text with keybord               |             | shift + ← / →     |
+| select text with keyboard              |             | shift + ← / →     |
 | select all text                        |             | ctrl + a          |
 | paste                                  | center      | ctrl + v          |
 | paste (path/url)     [*4]              | drop file   |                   |
-| copy [*1]                              |             | ctrl + c          |
+| copy                 [*1]              |             | ctrl + c          |
 | home                                   |             | home / ctrl + ←   |
 | end                                    |             | end  / ctrl + →   |
 | context menu         [*2]              | right       |                   |
@@ -30,17 +30,17 @@
 [*3] browser default event
 [*4] webview event
 
-| scroll to bottom [*2]                  |             | ctrl + l        |
-Scroll to the previous command - Ctrl+Up
-Scroll to the next command - Ctrl+Down
-alt aloww 文節移動
-ctrl + F   Find
+- Upcoming?
+  - scroll to bottom : ctrl + l
+  - Scroll to the previous/next command : Ctrl+Up/Down
+  - Move cursor word by word : alt+Left/Right
+  - find : ctrl + F
 
 ### commands
 
 **command type**
 
-- cmdlet   : wtermに備わる命令
+- cmdlet   : haitermに備わる命令
   - powershellの様に.dllで実行効率が良いということはない
 - action   : 後から機能追加された命令
   - 主にjavascriptでのコード = フロントエンドの操作

@@ -41,10 +41,19 @@ ps> wuzei.exe -s local:./index.html      # from local file
 ps> wuzei.exe -s file:./index.html       # from local file
 ps> wuzei.exe -s resource:index.html     # from resource file
 ps> wuzei.exe -s https://www.google.com/ # from web
+
+# replacing by internal logic
+#   local:./index.html  -> http://wuzei.localhoset/local/C:/hoge/index.html -> C:/hoge/index.html 
+#   resource:index.html -> http://wuzei.localhoset/resource/index.html
 ```
 
-```
-local:./index.html  -> http://wuzei.localhoset/local/C:/hoge/index.html -> C:/hoge/index.html
-resource:index.html -> http://wuzei.localhoset/resource/index.html
+replace the program, if used from local file, 
 
+```html
+<html>
+  <head>
+    <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
+...
+    <!-- ↓ -->
+    <script src="http://wuzei.localhoset/resource/vue@3.4.26/dist/vue.global.min.js"></script>
 ```

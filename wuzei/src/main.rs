@@ -87,6 +87,7 @@ async fn main() -> anyhow::Result<()> {
   let window = huazhi::tao::window::WindowBuilder::new()
     .with_title(APPNAME)
     .with_window_icon(RESOURCE.get_icon("image/icon.png"))
+    .with_min_inner_size(huazhi::wry::dpi::PhysicalSize::new(320.0, 120.0))
     .build(&event_loop).context("err")?;
 
   println!("{}", "set mmf".blue());

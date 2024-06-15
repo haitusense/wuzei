@@ -1,13 +1,14 @@
 # History
 
 ## 0.1.6 / huazhi 0.1.4 (2024--)
+- change : rename/refactoring
 - change : Separate terminal logic blocks terminal ```pty```
 - change : history/cursor select&copy&paste/scroll/drop logic in terminal
 - add : hashmap(command) in terminal logic blocks
 - add : JSDoc
-
-selectで範囲指定した際に、stokerの方でcontextが反映されない
-stakerの差し替え機構
+- add : stalker display replacement function
+- add : min window size
+- fix : select image logic
 ## 0.1.5 / huazhi 0.1.3 (2024-06-09)
 - change : terminal ```onKey```, ```onMount```, call prompt logic
 - change : clip canvas logic (ref zoomfactor)
@@ -44,5 +45,7 @@ stakerの差し替え機構
 - mmf, memorymapped for scripting
 - WebAssembly
 - scripting in hraw
-- 文字列のnull処理
+  - 平均データではなく加算データ+fixed pointに切り替えるか
+- 文字列のnull処理, unwarp減らす
 - クリップボードコピーに\n含まれてた時の扱い
+- multibyte characters / encodeURIComponent()

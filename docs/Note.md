@@ -1,4 +1,59 @@
+# Note
 
+### 親要素で変更検知
+
+- 子 -> 親 一方向
+  - emit : 投げっぱなし
+  - props + Function : 戻り値を取得 + asyncできる
+  - CustomEvent : eventとして拾う。bubblingすればdoucumentでも拾える
+- 子 <-> 親 双方向
+  - props + emit
+  - defineModel : Vueの新しいverで使用可能
+
+```html
+<div id ="app">
+  <my-component 
+    :on-click-props="async (e) =>{ return true; }"
+    @on-click-emit="(e)=>{ console.log(e) }"
+    :my-state="state" @update:my-state="$event => (state = $event)"
+  ></my-component>
+</div>
+<script type="module">
+  const app = {
+    setup(props, { emit }) {
+      fromEvent(document, 'action').subscribe(async e=>{ console.log("event", e) });
+    }
+  }
+</script>
+```
+
+```javascript
+const myComponent = {
+  props: {
+    onClickProps: { type: Function },
+    myState: { type: String },
+  }
+  setup(props, { emit }) {
+    const myRef = ref(null)
+
+    // call event
+    const onClick = async (e)=> {
+      emit('on-click-emit', e);
+      const dst = await props.onClickProps(e);
+      myRef.value.dispatchEvent(new CustomEvent('action', { bubbles: true, detail: e }));
+      console.log(dst)
+    }
+
+    // two-way
+    const state = computed({ get: () => props.myState, set: (e) => emit("update:my-state", e) });
+    from(state).subscribe(e => { console.log(state); });
+    state.value = "new value";
+  }
+}
+```
+
+
+### junk
 
 ```javascript
 async function hoge(e) {
@@ -50,7 +105,7 @@ mousedown$.pipe(
 ).subscribe(e => { console.log('up', e) });
 ```
 
-## wterm
+## haiterm
 
 ```js
   /*** key event ***/

@@ -30,13 +30,14 @@
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
-          <my-terminal ref="termRef"
+          <hai-terminal ref="termRef" 
             :pty="pty"
             :before-on-key="(e) =>{ return true; }"
+            :font-size="state.fontSize"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
             @on-drop="(e)=>{ onDrop = e}"
-          ></terminal>
+          ></hai-terminal>
         </vue-pane>
       </vue-split-pane>
     </div>
@@ -50,7 +51,7 @@
       const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
       import { indoc, post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
-      import { wtermComponent, WPty } from "./component/wterm.js"
+      import { haitermComponent, WPty } from "./component/haiterm.js"
       const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
@@ -70,6 +71,7 @@
 
           const state = ref({
             path : "",
+            fontSize : 12
           });
 
           /******** busy ********/
@@ -220,7 +222,7 @@
             nextTick(() => { console.log('app rendered'); });
           });
           return { 
-            isBusy, termShow,
+            isBusy, termShow, state,
             termRef, onTermMounted, pty, onDrop
           }
         }
@@ -228,7 +230,7 @@
 
       app.component('vue-pane', Pane);
       app.component('vue-split-pane', Splitpanes);
-      app.component('my-terminal', wtermComponent);
+      app.component('hai-terminal', haitermComponent);
       app.mount('#app');
     </script>
   </body>

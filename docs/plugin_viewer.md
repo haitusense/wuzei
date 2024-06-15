@@ -64,6 +64,11 @@ ps> wuzei.exe -s resource:viewer.html
 
 [*] : event in canvas
 
+- drop event
+  - drop image file in canvas : overwite ```read``` command and execute
+  - drop py file in canvas : overwite ```py``` command
+  - drop in terminal : insert filepath
+
 **color**
 
 | num | note                             |
@@ -114,15 +119,9 @@ terminal> state
 #   "(e) => (0 & 0b1111)"                        -> 7
 ```
 
-
 #### disable
 
-- send from namedpipe or prompt-dialog
-
-| function         | mouse                | shotcut-key     | terminal command |
-| :--              | :--:                 | :--:            | :--              |
-| prompt-dialog    | center (deep click)  |                 |                  |
-| alert           |                      |                 | alert [message]  |
+- send from namedpipe
 
 ### Scripting
 
