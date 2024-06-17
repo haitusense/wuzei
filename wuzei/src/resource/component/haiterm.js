@@ -40,12 +40,23 @@ const ESC = Object.freeze({
 
   hideCursor : `\x1b[?25l`,
   showCursor : `\x1b[?25h`,
-  move       : (n) => `\x1b[${n}G`, /* もしくはhoge.repert(n) */
-  delAfterCursor : `\x1b[0K`,
+  upLine       : (n) => (n > 0 ? `\x1b[${n}A` : ''),
+  downLine     : (n) => (n > 0 ? `\x1b[${n}B` : ''),
+  CurRight     : (n) => (n > 0 ? `\x1b[${n}C` : ''),
+  CurLeft      : (n) => (n > 0 ? `\x1b[${n}D` : ''),
+  downLineHead : (n) => (n > 0 ? `\x1b[${n}E` : ''),
+  upLineHead   : (n) => (n > 0 ? `\x1b[${n}F` : ''),
+  move         : (n) => `\x1b[${n}G`,         // 絶対座標
+  moveXY       : (x, y) => `\x1b[${y};${x}H`, // 絶対座標
+  delLineAfterCursor : `\x1b[0K`,
+  delAllAfterCursor : `\x1b[0J`,
   delAfterN  : (n) => `\x1b[${n}G\x1b[0K`,
   eraseLine  : `\x1b[2K`,  // Erases the whole line
-  BS         : `\b \b`,           // BackSpace
-  RL         : `\r`,           // Goes back to the begining of the line
+  BS         : `\b \b`,    // BackSpace
+  BSs        : (n) => `${'\b \b'.repeat(n)}m`,
+  BSr        : (n) => `${'\b'.repeat(n)}m`,
+  RL         : `\r`,       // Goes back to the begining of the line
+
 })
 
 /**************** LineStorage ****************/
@@ -209,6 +220,13 @@ class CurLineManager {
     }
   }
 
+  clone() {
+    const a = new CurLineManager();
+    a.new(this.#line)
+    a.setCur(this.#pos)
+    return a;
+  }
+
   /******** method ********/
 
   /**
@@ -221,7 +239,7 @@ class CurLineManager {
       return;
     }
     this.#line = str
-    this.pos(str.length, false)
+    this.setCur(str.length, false)
   }
 
   /**
@@ -241,7 +259,7 @@ class CurLineManager {
    * @param {number} n
    * @param {boolean} shift - select mode
    */
-  pos(n, shift = false){
+  setCur(n, shift = false){
     const dst = n;
     this.#pos = dst < 0 ? 0 : this.#line.length < dst ? this.#line.length : dst;
     if(!shift){
@@ -254,7 +272,7 @@ class CurLineManager {
    * @param {number} n      - +1 : increment  -1 : decrement
    * @param {boolean} shift - select mode
    */
-  move(n, shift = false){
+  moveCur(n, shift = false){
     const dst = this.#pos + n;
     this.#pos = dst < 0 ? 0 : this.#line.length < dst ? this.#line.length : dst;
     if(!shift){
@@ -276,16 +294,36 @@ class CurLineManager {
     const back = this.#line.slice(this.selected.end);
 
     this.#line = front + src + back;
-    this.move(src.length, false)
+    this.moveCur(src.length, false)
   }
 
   /**
    * @param {string} prompt_str
+   * @returns {{data:string, x:number, y:number}}
    */
   currentLine(prompt_str){
-    const len = this.#pos + prompt_str.length + 1;
-    const buf = CurLineManager.CmdParser.syntaxHighlighting(this.#line, this.selected.start, this.selected.length);
-    return `${ESC.move(0)}${ESC.eraseLine}${prompt_str}${buf}${ESC.move(len)}`;
+    const dst = prompt_str + CurLineManager.CmdParser.syntaxHighlighting(this.#line, this.selected.start, this.selected.length);
+    const pos = prompt_str.length + this.#pos + 1;
+    return {data:dst, x:pos, y:0};
+  }
+
+  /**
+   * @param {string} prompt_str
+   * @param {number} wrap
+   * @returns {{data:string, x:number, y:number, fx:number, fy:number}} 
+   */
+  currentLineWrap(prompt_str, wrap){
+    const pos = prompt_str.length + this.#pos;
+    const x = (pos % wrap) + 1
+    const y = Math.trunc(pos / wrap)
+
+    const fpos = prompt_str.length + this.#line.length;
+    const fx = (fpos % wrap) + 1
+    const fy = Math.trunc(fpos / wrap) 
+
+    const buf = prompt_str + CurLineManager.CmdParser.syntaxHighlighting(this.#line, this.selected.start, this.selected.length);
+    const dst = CurLineManager.CmdParser.wrap(buf, wrap);
+    return {data:dst, x:x, y:y, fx:fx, fy:fy};
   }
 
   /******** commandline perser ********/
@@ -359,6 +397,38 @@ class CurLineManager {
       }, "");
   
       return dst + ESC.DEF;
+    },
+
+    /**
+     * @param {string} src
+     * @param {number} max_length
+     * @returns {string}
+     */
+    wrap : (src, max_length) => {
+      let index = 0;
+      // let x = 1
+      // let y = 0
+      const matches = src.matchAll(/(\x1b\[[0-9;]*[mG])|(.)/g);
+      const dst = Array.from(matches).reduce((acc, cur) => {
+        if(cur[2]){ 
+          if((index % max_length) == (max_length - 1)){
+            index += 1;
+            // y += 1
+            // x = 0
+            return acc + cur[0] + "\r\n";
+          }else{
+            index += 1;
+            // x += 1
+            return acc + cur[0];
+          }
+        }else{
+          return acc + cur[0];
+        }
+        // 改行は後ろに来ないとカーソルの行き場がなくなる
+      }, "");
+
+      // console.log("in : ", dst, x, y)
+      return dst;
     }
 
   })
@@ -378,11 +448,13 @@ class WPty {
   #prompt_str = '';
   
   /** @type {CurLineManager} */
+  #old_cur = new CurLineManager();
+  /** @type {CurLineManager} */
   #cur = new CurLineManager();
   /** @type {LineStorage} */
   #storage
 
-  /** @type {function(any): void} */
+  /** @type {function(any, number=): void} */
   #onData
   /** @type {function(any): void} */
   #onChange
@@ -400,7 +472,7 @@ class WPty {
   isBusy(){ return !this.#isWaitCom }
   /**
    * termへの書き出し設定
-   * @param {function(any): void} func
+   * @param {function(any, number=): void} func
    */
   onData(func){ this.#onData = func }
   /**
@@ -413,6 +485,11 @@ class WPty {
    * @param {function(any): void} func
    */
   onSubmit(func){ this.#onSubmit = func }
+
+  #termCursor
+  setCursor(object){
+    this.#termCursor = object
+  }
 
   /**
    * restore
@@ -468,20 +545,20 @@ class WPty {
     switch(type){
       case 'insert':
         this.#cur.input(e)
-        this.#buildOutput();
+        this.#old_cur = this.#buildOutput(this.#cur, this.#old_cur);
         break;
       case 'append':
-        this.#cur.pos(this.#cur.length)
+        this.#cur.setCur(this.#cur.length)
         this.#cur.input(e)
-        this.#buildOutput();
+        this.#old_cur = this.#buildOutput(this.#cur, this.#old_cur);
         break;
       case 'overwrite':
         this.#cur.new(e)
-        this.#buildOutput();
+        this.#old_cur = this.#buildOutput(this.#cur, this.#old_cur);
         break;
       case 'execute':
         this.#cur.new(e)
-        this.#buildOutput();
+        this.#old_cur = this.#buildOutput(this.#cur, this.#old_cur);
         this.#enter();
         break;
       default:
@@ -500,17 +577,17 @@ class WPty {
 
       /*** break -> this.#buildOutput() ***/
 
-      case 'ArrowLeft': { this.#cur.move(-1, false) } break;
-      case 'ArrowRight': { this.#cur.move(+1, false) } break;
-      case 'shift+ArrowLeft': { this.#cur.move(-1, true) } break;
-      case 'shift+ArrowRight': { this.#cur.move(+1, true) } break;
+      case 'ArrowLeft': { this.#cur.moveCur(-1, false) } break;
+      case 'ArrowRight': { this.#cur.moveCur(+1, false) } break;
+      case 'shift+ArrowLeft': { this.#cur.moveCur(-1, true) } break;
+      case 'shift+ArrowRight': { this.#cur.moveCur(+1, true) } break;
 
-      case 'ctrl+ArrowLeft': { this.#cur.pos(0, false) } break;
-      case 'Home': { this.#cur.pos(0, false) } break;
-      case 'ctrl+ArrowRight': { this.#cur.pos(this.#cur.length, false) } break;
-      case 'End': { this.#cur.pos(this.#cur.length, false) } break;
-      case 'Delete': { this.#cur.move(+1, true); this.#cur.input(''); } break;
-      case 'Backspace': { this.#cur.move(-1, true); this.#cur.input(''); } break;
+      case 'ctrl+ArrowLeft': { this.#cur.setCur(0, false) } break;
+      case 'Home': { this.#cur.setCur(0, false) } break;
+      case 'ctrl+ArrowRight': { this.#cur.setCur(this.#cur.length, false) } break;
+      case 'End': { this.#cur.setCur(this.#cur.length, false) } break;
+      case 'Delete': { this.#cur.moveCur(+1, true); this.#cur.input(''); } break;
+      case 'Backspace': { this.#cur.moveCur(-1, true); this.#cur.input(''); } break;
       case 'shift+ArrowUp': break;
       case 'shift+ArrowDown': break;
 
@@ -519,11 +596,11 @@ class WPty {
       } break;
       case 'ctrl+c': { 
         navigator.clipboard.writeText(this.#cur.getSelection());
-        this.#cur.move(0, false)
+        this.#cur.moveCur(0, false)
       } break;
       case 'ctrl+a': { 
-        this.#cur.pos(0, false)
-        this.#cur.move(this.#cur.length, true)
+        this.#cur.setCur(0, false)
+        this.#cur.moveCur(this.#cur.length, true)
       } break;
       /*** ここからreturn ***/
       case 'ArrowUp': this.#onStr('overwrite', this.#storage.back()); return;
@@ -540,15 +617,27 @@ class WPty {
         }
         return;
     }
-    this.#buildOutput();
+    this.#old_cur = this.#buildOutput(this.#cur, this.#old_cur);
   }
 
   /**
    * promptの表示のbuild
+   * @param {CurLineManager} cur 
+   * @param {CurLineManager} old_cur 
+   * @returns {CurLineManager}
    */
-  #buildOutput() {
-    this.#onData(this.#cur.currentLine(this.#prompt_str));
+  #buildOutput(cur, old_cur) {
+    const oldc = old_cur.currentLineWrap(this.#prompt_str, this.#termCursor.cols - 1)
+    const newc = cur.currentLineWrap(this.#prompt_str, this.#termCursor.cols - 1)
+
+    const o_rollup = `${ESC.upLine(oldc.y) + ESC.move(0) + ESC.delAllAfterCursor}`
+    const n_rollup = `${ESC.upLine(newc.fy) + ESC.move(0)}`
+    const curpos = `${ESC.downLine(newc.y) + ESC.move(newc.x)}`
+    // console.log("buildOutput", oldc.y, newc.y, newc.fy)
+    this.#onData(o_rollup + newc.data + n_rollup + curpos);
     this.#onChange(this.#cur.str)
+    old_cur = cur.clone()
+    return cur.clone();
   }
 
   /**
@@ -570,7 +659,8 @@ class WPty {
       this.#onData('\r\n');
     }
     this.#cur.new('');
-    this.#onData(this.#prompt_str);
+    // ここでプロンプトを呼ぶべき
+    this.#old_cur = this.#buildOutput(this.#cur, this.#cur);
     // this.terminal.scrollToBottom();
     this.#isWaitCom = true
   }
@@ -579,7 +669,7 @@ class WPty {
    */
   showprompt(){
     if(!this.#isWaitCom){
-      this.#buildOutput();
+      this.#buildOutput(this.#cur, this.#old_cur);
       this.#isWaitCom = true;
     }
   }
@@ -706,6 +796,21 @@ class WPty {
       });
 
     }},
+    'js1' : { 'type': 'cmdlet', 'func': (e, callback) =>{
+      const code = e.payload.join(' ');
+      const evalFnc =(obj)=>{ return Function('"use strict";return (' + obj + ')')(); }
+      try{
+        const hoge = 123;
+        /* callback(`${code} = ${eval(code)}`);
+          -> this(wpty), hogeにアクセスできる
+        */
+        callback(`${code} = ${evalFnc(code)}`);
+        // -> Functionだとthis, hogeへのスコープは存在しない
+      }catch(e){
+        callback(`\r\n${e}`)
+      }
+
+    }},
   };
 
   /**
@@ -739,7 +844,7 @@ class WPty {
  * emit    : on-change, on-submit, on-mounted, on-drop \
  *   asyncでreturn欲しい場合はpropsでつなぐ
  */
-const haitermComponent = {
+const Haiterm = {
   template: `<div id="hai-term" ref="terminalRef" style="height: 100%; background-color:black; opacity:1"> </div>`,
   data() { return { /* count: 0 */ } },
   props: {
@@ -762,7 +867,7 @@ const haitermComponent = {
       theme: { /* foreground: 'yellow', */ }
     });
     const fitAddon = new FitAddon()
-    
+
     // init term
     {
       terminal.loadAddon(fitAddon);
@@ -788,6 +893,14 @@ const haitermComponent = {
         const alt = e.domEvent.altKey ? 'alt+' : ''
         const key = `${shift}${ctrl}${alt}${e.domEvent.key}`
         switch(key){
+          case 'ctrl+z':
+            console.log(terminal.buffer._normal.cursorY) // colsで現在75colなので...折り返し行数は分かってる
+            terminal.write("a")
+            break;
+          case 'ctrl+x':
+            console.log(terminal.getSelectionPosition())
+            terminal.write("\b") // 複数行になったら\bじゃ戻らない
+            break;
           case 'ctrl+c': // マウスイベント優先
             if(terminal.getSelectionPosition()){  
               navigator.clipboard.writeText(terminal.getSelection())
@@ -841,8 +954,16 @@ const haitermComponent = {
       });
       // not use : terminal.prompt = () =>{ };
       // not use : terminal.onData(e => { });
-      // not use : terminal.onCursorMove(e => { console.log("onCursorMove ", this.#terminal.buffer) });
+      // not use :
 
+      // pty.onDataでは反映が取得できないがonCursorMoveで反映が取得できる
+      terminal.onCursorMove(e => { 
+        pty.setCursor({ 
+          x : terminal.buffer.active.cursorX, 
+          y: terminal.buffer.active.cursorY,
+          cols : terminal.cols
+        })
+      });
       // fromEvent(document, 'keydown').subscribe( e => { console.log("ok",e) });
     }
     
@@ -874,6 +995,12 @@ const haitermComponent = {
       terminal.clear();
       pty.restore();
       terminal.focus();
+
+      pty.setCursor({ 
+        x : terminal.buffer.active.cursorX, 
+        y: terminal.buffer.active.cursorY,
+        cols : terminal.cols
+      })
     }
 
     const close = () =>{
@@ -914,10 +1041,26 @@ const haitermComponent = {
         e.stopPropagation();
         e.preventDefault();
       });
-      fromEvent(terminalRef, 'drop').subscribe(e => {
-        // e.stopPropagation(); e.preventDefault(); で伝播をとめるのは親側で
-        emit('on-drop', e)
+      fromEvent(terminalRef, 'drop').subscribe(async e => {
         terminalRef.value.style.opacity = 1
+        const target = 'terminal'
+        if (e.dataTransfer.items != null) {
+          switch(e.dataTransfer.items[0].kind){
+            case 'string': {
+              const dst = await (()=> new Promise(resolve => e.dataTransfer.items[0].getAsString(data => resolve(data))))()
+              emit('on-drop', { kind:'string', target:target, detail: dst.trim() })
+            } break;
+            case 'file': {
+              const dst = e.dataTransfer.items[0].getAsFile().name;
+              emit('on-drop', { kind:'file', target:target, detail: dst.trim() })
+            } break;
+            default:
+              break;
+          }
+          return;
+        }
+        e.stopPropagation();
+        e.preventDefault();
       })
     }
 
@@ -937,6 +1080,6 @@ const haitermComponent = {
 
 /**************** export ****************/
 
-export { haitermComponent, WPty };
+export { Haiterm , WPty };
 
 

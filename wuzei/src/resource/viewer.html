@@ -30,10 +30,10 @@
             :zoom="zoom" @update:zoom="$event => (zoom = $event)"
             :select="select" @update:select="$event => (select = $event)"
             :rendering="rendering ? 'pixelated' : 'auto'"
-            @on-drop="(e)=>{ onDrop = { type : 'canvas', event : e }}"
             @on-context="onContextmenu"
             @on-mousemove="onMousemove"
             @on-wheel="onWheel"
+            @on-drop="(e)=>{ onDrop = e}"
           ></canvas-ex>
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
@@ -43,7 +43,7 @@
             :before-on-key="(e) =>{ return true; }"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
-            @on-drop="(e)=>{ onDrop = { type : 'terminal', event : e }}"
+            @on-drop="(e)=>{ onDrop = e}"
           ></hai-terminal>
         </vue-pane>
       </vue-split-pane>
@@ -61,7 +61,7 @@
       const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
       import { indoc, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, setState, readFile } from "./js/lib.js"
-      import { haitermComponent, WPty } from "./component/haiterm.js"
+      import { Haiterm, WPty } from "./component/haiterm.js"
       import { canvasEx, Rect } from "./component/canvas-ex.js"
       import { contextmenu } from "./component/context.js"
       import { stalker } from "./component/stalker.js"
@@ -69,8 +69,8 @@
       const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
-        bufferToggle, switchMap, mergeMap,  
-        share, tap
+        bufferToggle, switchMap, mergeMap, flatMap, 
+        share, tap, combineLatest, zip, exhaustMap
       } = rxjs;
       const { from, fromEvent } = VueUse;
 
@@ -172,10 +172,7 @@
               // window.haiterm.inputln(`echo ${e.detail.payload}`);
             }},
 
-            'js1' : { 'type': 'function', 'func': async (e, callback) =>{
-              const dst = eval(e.payload.join(' '))
-              callback(`${e.payload.join(' ')} = ${dst}`);
-            }},
+
             'py1' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("py1", e.payload.join(' ') )
               callback(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
@@ -321,36 +318,32 @@
 
 
           /******** dorp event ********/
-
           ( wv 
-            ? from(onDrop).pipe( switchMap( e => merge( of(e).pipe(delay(100)), fromEvent(wv, 'newWindowReq')).pipe(first()) ))
-            : from(onDrop).pipe( tap(e => { e.event.stopPropagation(); e.event.preventDefault(); }) )
-          ).subscribe( async e => {
-            const key = `${ onDrop.value.type }_${ e.event.constructor.name }:${ e?.detail?.type ?? e.event.dataTransfer.items[0].kind }`;
-            const e_to_url = async (ev) => JSON.stringify(await (()=> new Promise(resolve => ev.event.dataTransfer.items[0].getAsString(data => resolve(data))))() );
-            const e_to_name = (ev) => JSON.stringify(ev.event.dataTransfer.items[0].getAsFile().name); // cannot read full path
-            const e_to_path = (ev) => JSON.stringify(ev?.detail?.payload);
-            switch(key){
-
-              case 'terminal_DragEvent:string': { pty.input(await e_to_url(e)); } break;
-              case 'terminal_DragEvent:file': { pty.input(e_to_name(e)); } break; 
-              case 'terminal_CustomEvent:file': { pty.input(e_to_path(e)); } break;
-              case 'terminal_CustomEvent:http': { pty.input(e_to_path(e)); } break;
-
-              case 'canvas_DragEvent:string': { pty.input(`read ${await e_to_url(e)}`, 'overwrite') } break;
-              case 'canvas_DragEvent:file': { pty.input(`read ${e_to_name(e)}`, 'overwrite') } break;
-              case 'canvas_CustomEvent:file': { 
-                
-                pty.input(`read ${e_to_path(e)}`, 'overwrite') 
-                          // pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
-            // case 'file': { await pty.input(`read ${e.detail.payload}`, "execute") } break;
+            ? zip(from(onDrop), fromEvent(wv, 'newWindowReq'))
+            : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
+          ).subscribe( async ([e1, e2]) => {
+            switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
+              case 'canvas:drop_string'  : { pty.input(`read ${JSON.stringify(e1.detail)}`, 'overwrite') } break;
+              case 'canvas:drop_file'    : { pty.input(`read ${JSON.stringify(e1.detail)}`, 'overwrite') } break;
+              case 'canvas:req_http'     : { pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, 'overwrite') } break;
+              case 'canvas:req_file'     : { 
+                if(e2.detail?.payload.match('.(py|txt)$')){
+                  pty.input(`py ${JSON.stringify(e2.detail?.payload)}`, 'overwrite') 
+                }else{
+                  pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, 'overwrite')
+                }
               } break;
-              case 'canvas_CustomEvent:http': { pty.input(`read ${e_to_path(e)}`, 'overwrite') } break;
-  
-              default: console.error(`unknown type in drop event : ${key}`); break;
-            }
 
+              case 'terminal:drop_string': { pty.input(JSON.stringify(e1.detail)); } break;
+              case 'terminal:drop_file'  : { pty.input(JSON.stringify(e1.detail)); } break;
+              case 'terminal:req_http'      : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:req_file'      : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+
+              default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
+            }
+                //    pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
           });
+ 
 
           /******** other event ********/
           if(wv){
@@ -392,7 +385,7 @@
       app.component('context-menu', contextmenu);
       app.component('mouse-stalker', stalker);
       app.component('canvas-ex', canvasEx);
-      app.component('hai-terminal', haitermComponent);
+      app.component('hai-terminal', Haiterm);
       app.mount('#app');
     </script>
   </body>

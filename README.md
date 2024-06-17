@@ -43,7 +43,7 @@ ps> wuzei.exe -s resource:index.html     # from resource file
 ps> wuzei.exe -s https://www.google.com/ # from web
 
 # replacing by internal logic
-#   local:./index.html  -> http://wuzei.localhoset/local/C:/hoge/index.html -> C:/hoge/index.html 
+#   local:./index.html  -> http://wuzei.localhoset/local/c:/hoge/index.html -> c:/hoge/index.html 
 #   resource:index.html -> http://wuzei.localhoset/resource/index.html
 ```
 

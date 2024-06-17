@@ -304,9 +304,27 @@ const canvasEx = {
         e.stopPropagation();
         e.preventDefault();
       });
-      fromEvent(divRef, 'drop').subscribe(e => {
-        emit('on-drop', e)
+      fromEvent(divRef, 'drop').subscribe(async e => {
         canvasRef.value.style.opacity = 1
+        const target = 'canvas'
+        if (e.dataTransfer.items != null) {
+          switch(e.dataTransfer.items[0].kind){
+            case 'string': {
+              const dst = await (()=> new Promise(resolve => e.dataTransfer.items[0].getAsString(data => resolve(data))))()
+              emit('on-drop', { kind:'string', target:target, detail: dst.trim() })
+            } break;
+            case 'file': {
+              const dst = e.dataTransfer.items[0].getAsFile().name;
+              emit('on-drop', { kind:'file', target:target, detail: dst.trim() })
+            } break;
+            default:
+              break;
+          }
+          return;
+        }
+        e.stopPropagation();
+        e.preventDefault();
+
       });
     }
 

@@ -49,3 +49,4 @@
 - 文字列のnull処理, unwarp減らす
 - クリップボードコピーに\n含まれてた時の扱い
 - multibyte characters / encodeURIComponent()
+- 自動改行

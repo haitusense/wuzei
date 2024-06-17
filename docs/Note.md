@@ -52,6 +52,32 @@ const myComponent = {
 }
 ```
 
+### Drop
+
+```javascript
+  e[0].event.constructor.name
+// 変更前 問題点 : 
+//   drop$内で処理 -> aysncなのでfromEvent(wv, 'newWindowReq')より遅く流れることがある
+//   fromEvent(wv, 'newWindowReq')内で処理 -> 処理中にevent handler抜けて破棄される
+
+const drop$ = fromEvent(target, 'drop').pipe(...)
+( wv 
+  ? drop$.pipe( switchMap( e => merge( of(e).pipe(delay(200)), fromEvent(wv, 'newWindowReq')).pipe(first()) ))
+  : drop$.pipe( tap(e => { e.event.stopPropagation(); e.event.preventDefault(); }), map(e => [ e, undefined ]) )
+).subscribe( )
+
+// ↓
+// 変更
+//   drop$内で処理して結果をemitする
+//   drop$とfromEvent(wv, 'newWindowReq')が逆順になるが1vs1ではあるのでzipでまとめる
+//   preventDefaultの為、fromEvent(document, 'drop') / fromEvent(wv, 'newWindowReq')の切り替えとする
+//   e2.constructor.nameで分岐してもいいけど面倒なのでmapでundefinedにする
+
+( wv 
+  ? zip(drop$, fromEvent(wv, 'newWindowReq'))
+  : zip(drop$, fromEvent(document, 'drop').pipe( tap(e => e.preventDefault(); ))).pipe( map(e => [e[0], undefined]) )
+).subscribe( )
+```
 
 ### junk
 

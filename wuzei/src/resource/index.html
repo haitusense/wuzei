@@ -51,12 +51,12 @@
       const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
       import { indoc, post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
-      import { haitermComponent, WPty } from "./component/haiterm.js"
+      import { Haiterm, WPty } from "./component/haiterm.js"
       const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
         bufferToggle, switchMap, mergeMap,  
-        share, tap
+        share, tap, zip
 
       } = rxjs;
       const { from, fromEvent } = VueUse;
@@ -180,20 +180,17 @@
           /******** drag and dorp ********/
 
           ( wv 
-            ? from(onDrop).pipe( switchMap( e => merge( of(e).pipe(delay(100)), fromEvent(wv, 'newWindowReq')).pipe(first()) ))
-            : from(onDrop).pipe( tap(e => { e.stopPropagation(); e.preventDefault(); }) )
-          ).subscribe( async e => {
+            ? zip(from(onDrop), fromEvent(wv, 'newWindowReq'))
+            : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
+          ).subscribe( async ([e1, e2]) => {
             const mode = "append";
             const commamd = (n) => pty.input(`echo JSON.stringify(${n}))`, mode);
-            switch(`${ e.constructor.name }:${ e?.detail?.type ?? e.dataTransfer.items[0].kind }`){
-              case 'DragEvent:string': {
-                const url = await (()=> new Promise(resolve => e.dataTransfer.items[0].getAsString(data => resolve(data))))();
-                commamd(url)
-              } break;
-              case 'DragEvent:file': { commamd(e.dataTransfer.items[0].getAsFile().name) } break; // cannot read full path
-              case 'CustomEvent:file': { commamd(e?.detail?.payload) } break;
-              case 'CustomEvent:http': { commamd(e?.detail?.payload) } break;
-              default: console.error("unknown type in drop event"); break;
+            switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
+              case 'terminal:drop_string': { commamd(JSON.stringify(e1.detail)); } break;
+              case 'terminal:drop_file'  : { commamd(JSON.stringify(e1.detail)); } break;
+              case 'terminal:req_http'   : { commamd(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:req_file'   : { commamd(JSON.stringify(e2.detail?.payload)); } break;
+              default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
             }
           });
 
@@ -230,7 +227,7 @@
 
       app.component('vue-pane', Pane);
       app.component('vue-split-pane', Splitpanes);
-      app.component('hai-terminal', haitermComponent);
+      app.component('hai-terminal', Haiterm);
       app.mount('#app');
     </script>
   </body>
