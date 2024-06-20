@@ -48,13 +48,14 @@ ps> wuzei.exe -s resource:viewer.html
 | **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```set zoom [level]``` |
 |                                   |                          | shift + ctrl + ↑/↓     | |
 | **mono/color**                    |                          | shift + ←/→            | ```set color [num]``` |
-| **rendering**                     |                          | '\\'                   | |
+| **rendering**                     |                          | F1                     | |
 | echo                              |                          |                        | ```echo [args]``` |
 | get current_dir                   |                          |                        | ```env``` |
 | set current_dir                   |                          |                        | ```cd [path]``` |
 | show state                        |                          |                        | ```state``` |
 | set state                         |                          |                        | ```set [key] [value]``` |
-| refresh display                   |                          |                        | ```refresh``` |
+| refresh display                   |                          | F2                     | ```refresh``` |
+| reload (browser)                  |                          | F5                     | |
 | redraw form file                  |                          |                        | ```redraw``` |
 | getpixel                          |                          |                        | ```getpixel [x] [y]``` |
 | scripting (js eval)               |                          |                        | ```js1 [command]``` |

@@ -86,25 +86,24 @@
           const [onDrop] = [ref(null)];
           const [testRef] = [ref(null)];
 
+          const select = ref(Rect.new());
+          const [zoom, rendering, fontSize] = [ref(null), ref(true), ref(12)];
+          const [bitshift, color] = [ref(0), ref(0)]
           // const rawState = ref({ bitshift :0, color:0, });
-          const [zoom, select, rendering] = [ref(null), ref(Rect.new()), ref(true)];
-          const bitshift = ref(0) 
-          const color = ref(0)
-          const rawState$ = merge(from(bitshift), from(color))
 
-          const fontSize = ref(12)
-          
           const state = {
             bitshift : { type: Number, data: bitshift },
             color : { type: Number, data: color },
             zoom : { type: Number, data: zoom },
+            rendering : { type: Boolean, data: rendering },
             path : { type: String, data: ref("") },
             subpath : { type: String, data: ref("data.raw") },
             stalker : { type: String, data: ref("(e) => e + 0") },
             fontSize : { type: Number, data: fontSize },
             test : { type: Object, data: ref({a:0, b:0}) },
             execute :  { type: Boolean, data: ref(true) },
-            prompt :  { type: String, data: ref("(path) => (path ?? 'offline') + '> '") },
+            prompt : { type: String, data: ref("(path) => (path ?? 'offline') + '> '") },
+
           }
 
           /******** method ********/
@@ -121,6 +120,7 @@
           from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
           // from(select).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
 
+          const rawState$ = merge(from(bitshift), from(color))
           rawState$.subscribe(async e => { await refresh() })
 
           /******** action ********/
@@ -284,10 +284,11 @@
           fromEvent(document, 'keydown').pipe(
             filter( n => n.repeat === false ), 
             filter(n => n.key.startsWith('Arrow')
-              || ['\\', '.'].includes(n.key)
+              ||n.key.startsWith('F')
               || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
             )
           ).subscribe( async e => {
+            console.log(e)
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
             switch(keys){
               /* break -> e.preventDefault() */
@@ -303,9 +304,8 @@
               case 'shift+ctrl+ArrowUp': { zoom.value += 1; } break;
               case 'shift+ctrl+ArrowDown': { zoom.value -= 1; } break;
 
-              case 'IntlRo': { rendering.value = !rendering.value } break;
-
-              case "F5": { pty.input("refreash", 'execute'); } break;
+              case 'F1': { rendering.value = !rendering.value } break;
+              case "F2": { pty.input("refresh", 'execute'); } break;
 
               /* return -> bubbling */
               default: {} return;
