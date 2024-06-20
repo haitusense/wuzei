@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import random
 import pandas as pd
 import polars as pl
 

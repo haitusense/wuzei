@@ -46,7 +46,7 @@ const ESC = Object.freeze({
   CurLeft      : (n) => (n > 0 ? `\x1b[${n}D` : ''),
   downLineHead : (n) => (n > 0 ? `\x1b[${n}E` : ''),
   upLineHead   : (n) => (n > 0 ? `\x1b[${n}F` : ''),
-  move         : (n) => `\x1b[${n}G`,         // 絶対座標
+  move         : (n) =>    `\x1b[${n}G`,      // 絶対座標
   moveXY       : (x, y) => `\x1b[${y};${x}H`, // 絶対座標
   delLineAfterCursor : `\x1b[0K`,
   delAllAfterCursor : `\x1b[0J`,
@@ -136,7 +136,7 @@ class LineStorage {
     if(src.trim().length < 1){ return; }
     // cur_dataの初期化
     this.#cur_data = {
-      date: Date.now(),
+      date : Date.now(),
       prompt : src,
       result : "" 
     }
@@ -199,14 +199,16 @@ class CurLineManager {
 
   /******** property ********/
 
-  /** @returns {number} */
-  get length() { return this.#line.length; }
-
   /** @returns {string} */
   get str() { return this.#line; }
+  /** @returns {string} */
+  get selectedStr(){ return this.#line.slice(this.selected.start, this.selected.end) }
+
   /** @returns {Object} */
   get json() { return CurLineManager.CmdParser.parse(this.#line); }
 
+  /** @returns {number} */
+  get length() { return this.#line.length; }
   /** @returns {number} */
   get postion() { return this.#pos; }
   /** @returns {{start, end, length}} */
@@ -280,10 +282,6 @@ class CurLineManager {
     }
   }
 
-  /**
-   * move cur position
-   */
-  getSelection(){ return this.#line.slice(this.selected.start, this.selected.end) }
 
   /**
    * insert string
@@ -410,23 +408,19 @@ class CurLineManager {
       // let y = 0
       const matches = src.matchAll(/(\x1b\[[0-9;]*[mG])|(.)/g);
       const dst = Array.from(matches).reduce((acc, cur) => {
-        if(cur[2]){ 
-          if((index % max_length) == (max_length - 1)){
-            index += 1;
-            // y += 1
-            // x = 0
-            return acc + cur[0] + "\r\n";
-          }else{
-            index += 1;
-            // x += 1
-            return acc + cur[0];
-          }
-        }else{
+        if(cur[1]){
+          // 特殊文字 -> 追加のみ
           return acc + cur[0];
+        } else if((index % max_length) != (max_length - 1)) {
+          // 通常文字 -> 追加 + inc
+          index += 1; // x += 1
+          return acc + cur[0];
+        }else{
+          // 通常文字折り返し -> 追加 + CR + inc 
+          index += 1; // x = 0; y += 1;
+          return acc + cur[0] + "\r\n"; // 改行は後ろに来ないとカーソルの行き場がなくなる
         }
-        // 改行は後ろに来ないとカーソルの行き場がなくなる
       }, "");
-
       // console.log("in : ", dst, x, y)
       return dst;
     }
@@ -453,6 +447,9 @@ class WPty {
   #cur = new CurLineManager();
   /** @type {LineStorage} */
   #storage
+
+  /** @type {any} */
+  #termCursor
 
   /** @type {function(any, number=): void} */
   #onData
@@ -486,10 +483,8 @@ class WPty {
    */
   onSubmit(func){ this.#onSubmit = func }
 
-  #termCursor
-  setCursor(object){
-    this.#termCursor = object
-  }
+
+  setCursor(object){ this.#termCursor = object }
 
   /**
    * restore
@@ -595,7 +590,7 @@ class WPty {
         navigator.clipboard.readText().then((n) => { this.input(n) });
       } break;
       case 'ctrl+c': { 
-        navigator.clipboard.writeText(this.#cur.getSelection());
+        navigator.clipboard.writeText(this.#cur.selectedStr);
         this.#cur.moveCur(0, false)
       } break;
       case 'ctrl+a': { 
@@ -627,8 +622,8 @@ class WPty {
    * @returns {CurLineManager}
    */
   #buildOutput(cur, old_cur) {
-    const oldc = old_cur.currentLineWrap(this.#prompt_str, this.#termCursor.cols - 1)
-    const newc = cur.currentLineWrap(this.#prompt_str, this.#termCursor.cols - 1)
+    const oldc = old_cur.currentLineWrap(this.#prompt_str, this.#termCursor.wrap - 1)
+    const newc = cur.currentLineWrap(this.#prompt_str, this.#termCursor.wrap - 1)
 
     const o_rollup = `${ESC.upLine(oldc.y) + ESC.move(0) + ESC.delAllAfterCursor}`
     const n_rollup = `${ESC.upLine(newc.fy) + ESC.move(0)}`
@@ -684,6 +679,7 @@ class WPty {
   }
 
   /******** command ********/
+  #test_root = undefined;
 
   /** @type {Object.<string, { type:string, func:function(any, function(string):void): void}>} */
   #cmdlet = {
@@ -810,6 +806,94 @@ class WPty {
         callback(`\r\n${e}`)
       }
 
+    }},
+
+    //  File System Access API 
+    'open' : { 'type': 'cmdlet', 'func': async (e, callback) =>{
+      /*
+        full pathは取れないので 
+      */
+      const opts = {
+        types: [
+          { description: 'raw', accept: { 'application/x-binary': [".bin", ".zip", ".hraw"] } },
+          { description: 'script', accept: { 'text/plain': ['.py'] } }
+        ],
+        multiple: false
+      };
+      try {
+        const files = await globalThis.showOpenFilePicker(opts);
+        for (var handle of files) {
+          const dst = {
+            name : handle.name,
+            kind: handle.kind,
+          }
+          callback(`state : ${JSON.stringify(dst, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+          const file = await handle.getFile()
+          console.log(file)
+          console.log(await file.text())
+          console.log(await file.arrayBuffer())
+          // -> showSaveFilePicker
+        }
+      }catch(e){console.log(e)
+        callback(`cancel\r\n`);
+      }
+    }},
+
+    'web-mount' : { 'type': 'cmdlet', 'func': async (e, callback) =>{
+      const opts = {
+        id: 'haiterm',
+        mode : 'read',
+      };
+      try {
+        const dirHandle  = await globalThis.showDirectoryPicker(opts);
+        for await (var [name, handle] of dirHandle){
+          callback(`${name} : ${handle.kind}\r\n`)
+        }
+        this.#test_root = dirHandle
+      }catch(e){
+        console.log(e)
+        callback(`cancel\r\n`);
+      }
+    }},
+    'web-ls' : { 'type': 'cmdlet', 'func': async (e, callback) =>{
+      // window.localStorageは　 5 ～ 10 MB文字列
+      // window.sessionStorage : 寿命はセッション間のみ　
+      // window.localStorage   :Key-Value形式 5-10MB, 文字列 同期API 7日で
+      // Web SQL
+      // Indexed Database API : NoSQL
+      // origin private file system (OPFS) 一時的なローカルストレージで任意で揮発する
+      try {
+        if(this.#test_root){
+          callback(`ls test\r\n`);
+          console.log(this.#test_root)
+        }else{
+          callback(`open\r\n`);
+          this.#test_root = await globalThis.showDirectoryPicker({ id: 'haiterm', mode : 'read' });
+          // const root = await navigator.storage.getDirectory();
+        }
+        callback(`web ls\r\n`);
+        //@ts-ignore
+        for await (const [name, handle] of this.#test_root) {
+          // name = handle.name ?
+          switch(handle.kind){
+            case 'file':
+              const file = await handle.getFile()
+              callback(`${name} :${file.lastModifiedDate} ${file.size}\r\n`);
+               break;
+            case 'directory':
+              // console.log(name)
+              // const dir = await this.#test_root.getDirectoryHandle(name)
+              // console.log(dir, dir.size)
+              callback(`${name}/\r\n`);
+              break;
+            default:
+              break;
+          }
+
+        }
+      }catch(e){console.log(e)
+        callback(`cancel\r\n`);
+      }
     }},
   };
 
@@ -961,7 +1045,9 @@ const Haiterm = {
         pty.setCursor({ 
           x : terminal.buffer.active.cursorX, 
           y: terminal.buffer.active.cursorY,
-          cols : terminal.cols
+          alt_x: terminal.buffer.alternate.cursorX,
+          alt_y: terminal.buffer.alternate.cursorY,
+          wrap : terminal.cols
         })
       });
       // fromEvent(document, 'keydown').subscribe( e => { console.log("ok",e) });
@@ -999,7 +1085,9 @@ const Haiterm = {
       pty.setCursor({ 
         x : terminal.buffer.active.cursorX, 
         y: terminal.buffer.active.cursorY,
-        cols : terminal.cols
+        alt_x: terminal.buffer.alternate.cursorX,
+        alt_y: terminal.buffer.alternate.cursorY,
+        wrap : terminal.cols
       })
     }
 
@@ -1028,7 +1116,6 @@ const Haiterm = {
     /* drop */
     {
       fromEvent(terminalRef, 'dragenter').subscribe(e => {
-        e.preventDefault();
         terminalRef.value.style.opacity = 0.65
       });
       fromEvent(terminalRef, 'dragleave').subscribe(e => {
@@ -1042,17 +1129,22 @@ const Haiterm = {
         e.preventDefault();
       });
       fromEvent(terminalRef, 'drop').subscribe(async e => {
+        const event = {
+          target : 'terminal',
+          altKey : e.altKey,
+          ctrlKey : e.ctrlKey,
+          shiftKey : e.shiftKey,
+        }
         terminalRef.value.style.opacity = 1
-        const target = 'terminal'
         if (e.dataTransfer.items != null) {
           switch(e.dataTransfer.items[0].kind){
             case 'string': {
               const dst = await (()=> new Promise(resolve => e.dataTransfer.items[0].getAsString(data => resolve(data))))()
-              emit('on-drop', { kind:'string', target:target, detail: dst.trim() })
+              emit('on-drop', { ...event, kind:'string', detail: dst.trim() })
             } break;
             case 'file': {
               const dst = e.dataTransfer.items[0].getAsFile().name;
-              emit('on-drop', { kind:'file', target:target, detail: dst.trim() })
+              emit('on-drop', { ...event, kind:'file', detail: dst.trim() })
             } break;
             default:
               break;

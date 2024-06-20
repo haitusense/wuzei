@@ -33,7 +33,7 @@
           <hai-terminal ref="termRef" 
             :pty="pty"
             :before-on-key="(e) =>{ return true; }"
-            :font-size="state.fontSize"
+            :font-size="fontSize"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
             @on-drop="(e)=>{ onDrop = e}"
@@ -50,7 +50,7 @@
       //@ts-ignore
       const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
-      import { indoc, post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
+      import { post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
       import { Haiterm, WPty } from "./component/haiterm.js"
       const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
@@ -69,10 +69,11 @@
           const [termShow, termRef] = [ref(false), ref(null)];
           const onDrop = ref(false);
 
-          const state = ref({
-            path : "",
-            fontSize : 12
-          });
+          const fontSize = ref(12)
+          const state = {
+            path : { type: String, data: ref(null) },
+            fontSize : { type: Number, data: fontSize },
+          }
 
           /******** busy ********/
           from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
@@ -88,10 +89,26 @@
             }},
 
             'state' : { 'type': 'action', 'func': async (e, callback) =>{
-              callback(`state : ${JSON.stringify(state.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+              // callback(`state : ${JSON.stringify(state, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+              for(var key in state){
+                callback(` ${key} = ${state[key].data["_value"]}: ${state[key].type.name}\r\n`);
+              }
             }},
             'set' : { 'type': 'action', 'func': async (e, callback) =>{
-              state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
+              // state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
+              try{
+                switch(state[e.payload[0]].type.name){
+                  case "Boolean":
+                  case "Object":
+                    state[e.payload[0]].data.value = JSON.parse(e.payload[1])
+                    break;
+                  default:
+                    state[e.payload[0]].data.value = state[e.payload[0]].type(e.payload[1])
+                    break;
+                }
+              }catch(e){
+                callback(`err : ${e}\r\n`);
+              }
             }},
 
             /* rust */
@@ -184,12 +201,19 @@
             : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
           ).subscribe( async ([e1, e2]) => {
             const mode = "append";
-            const commamd = (n) => pty.input(`echo JSON.stringify(${n}))`, mode);
+            let command = (n) =>{ }
+            if(e1.ctrlKey && !e1.shiftKey){
+              command = (n) => pty.input(`echo ${JSON.stringify(n)}`, 'overwrite');
+            }else if(!e1.ctrlKey && e1.shiftKey){
+              command = (n) => pty.input(`echo ${JSON.stringify(n)}`, 'overwrite');
+            }else{
+              command = (n) => pty.input(`${JSON.stringify(n)}`, mode);
+            }
             switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
-              case 'terminal:drop_string': { commamd(JSON.stringify(e1.detail)); } break;
-              case 'terminal:drop_file'  : { commamd(JSON.stringify(e1.detail)); } break;
-              case 'terminal:req_http'   : { commamd(JSON.stringify(e2.detail?.payload)); } break;
-              case 'terminal:req_file'   : { commamd(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:drop_string': { command(e1.detail); } break;
+              case 'terminal:drop_file'  : { command(e1.detail); } break;
+              case 'terminal:req_http'   : { command(e2.detail?.payload); } break;
+              case 'terminal:req_file'   : { command(e2.detail?.payload); } break;
               default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
             }
           });
@@ -220,7 +244,8 @@
           });
           return { 
             isBusy, termShow, state,
-            termRef, onTermMounted, pty, onDrop
+            termRef, onTermMounted, pty, onDrop,
+            fontSize
           }
         }
       });

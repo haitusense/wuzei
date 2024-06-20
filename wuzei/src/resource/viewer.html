@@ -40,6 +40,7 @@
           <!-- terminal -->
           <hai-terminal ref="termRef"
             :pty="pty"
+            :font-size="fontSize"
             :before-on-key="(e) =>{ return true; }"
             @on-mounted="onTermMounted"
             @on-change="(e)=>{/*console.log(e)*/}"
@@ -85,19 +86,34 @@
           const [onDrop] = [ref(null)];
           const [testRef] = [ref(null)];
 
-          const rawState = ref({ 
-            bitshift :0, 
-            color:0,
-            LUT: "",
-            offset: ""
-          });
-          const otherState = ref({
-            path : "", 
-            subpath: "data.raw",
-            stalker : "(e) => e + 0"
-          });
+          // const rawState = ref({ bitshift :0, color:0, });
           const [zoom, select, rendering] = [ref(null), ref(Rect.new()), ref(true)];
+          const bitshift = ref(0) 
+          const color = ref(0)
+          const rawState$ = merge(from(bitshift), from(color))
+
+          const fontSize = ref(12)
           
+          const state = {
+            bitshift : { type: Number, data: bitshift },
+            color : { type: Number, data: color },
+            zoom : { type: Number, data: zoom },
+            path : { type: String, data: ref("") },
+            subpath : { type: String, data: ref("data.raw") },
+            stalker : { type: String, data: ref("(e) => e + 0") },
+            fontSize : { type: Number, data: fontSize },
+            test : { type: Object, data: ref({a:0, b:0}) },
+            execute :  { type: Boolean, data: ref(true) },
+            prompt :  { type: Boolean, data: ref("(path) => (path ?? 'offline') + '> '") },
+          }
+
+          /******** method ********/
+          const refresh = async () => {
+            stalkerRef.value.intext('shift+0', `bitshift : ${bitshift.value}\r\ncolor : ${color.value}`)
+            const image = await asyncPostPng({ bitshift: bitshift.value, color:color.value })
+            canvasRef.value.redraw(image);
+          }
+
           /******** busy ********/
           from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
 
@@ -105,24 +121,57 @@
           from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
           // from(select).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
 
-          from(rawState).subscribe(async e => {
-            stalkerRef.value.intext('shift+0', `bitshift : ${e.bitshift}\r\ncolor : ${e.color}`)
-            const image = await asyncPostPng(e)
-            canvasRef.value.redraw(image);
-          })
+          rawState$.subscribe(async e => { await refresh() })
 
           /******** action ********/
           pty.setCmd({
             /* js */
-
             'state' : { 'type': 'action', 'func': async (e, callback) =>{
-              callback(`rawState : ${JSON.stringify(rawState.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
-              callback(`otherState : ${JSON.stringify(otherState.value, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+              for(var i in state){
+                const key = ` ${i} : ${state[i].type.name}`.padEnd(20)
+                callback(` ${key} = ${JSON.stringify(state[i].data["_value"])}\r\n`);
+              }
             }},
             'set' : { 'type': 'action', 'func': async (e, callback) =>{
-              otherState.value = { ...otherState.value, [e.payload[0]] : e.payload[1] }
+              try{
+                switch(state[e.payload[0]].type.name){
+                  case "Boolean":
+                  case "Object":
+                    state[e.payload[0]].data.value = JSON.parse(e.payload[1])
+                    break;
+                  default:
+                    state[e.payload[0]].data.value = state[e.payload[0]].type(e.payload[1])
+                    break;
+                }
+              }catch(e){
+                callback(`err : ${e}\r\n`);
+              }
             }},
-            
+            'open' : { 'type': 'action', 'func': async (e, callback) =>{
+              const opts = {
+                types: [
+                  { description: 'image', accept: { 'image/png': [".png", ".bmp"] } },
+                  { description: 'raw', accept: { 'application/x-binary': [".bin", ".zip", ".hraw"] } },
+                  { description: 'script', accept: { 'text/plain': ['.py'] } }
+                ],
+                multiple: false
+              };
+              try {
+                const files = await globalThis.showOpenFilePicker(opts);
+                for (var handle of files) {
+                  const dst = {
+                    name : handle.name,
+                    kind: handle.kind,
+                    // data : await handle.getFile(); const text = await file.getText();
+                  }
+                  callback(`state : ${JSON.stringify(dst, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+                  // -> showSaveFilePicker
+                }
+              }catch(e){
+                callback(`cancel\r\n`);
+              }
+            }},
+
             'select' : { 'type': 'function', 'func': async (e, callback) =>{
               select.value = Rect.set4point(
                 Number(e.payload[0]), 
@@ -136,15 +185,6 @@
             }},
             'clip-selected' : { 'type': 'function', 'func': async (e, callback) =>{
               canvasRef.value.clip(true);
-            }},
-            'zoom' : { 'type': 'action', 'func': async (e, callback) =>{
-              zoom.value = Number(e.payload[0])
-            }},
-            'bitshift' : { 'type': 'function', 'func': async (e, callback) =>{
-              rawState.value = {...rawState.value, bitshift: Number(e.payload[0])}
-            }},
-            'color' : { 'type': 'function', 'func': async (e, callback) =>{
-              rawState.value = {...rawState.value, color: Number(e.payload[0])}
             }},
 
             /* rust */
@@ -161,17 +201,19 @@
               callback(JSON.stringify(dst));
             }},
             'refresh' : { 'type': 'function', 'func': async (e, callback) =>{
-              rawState.value = { ...rawState.value }
+              // bitshift.value = bitshift.value // オブジェクトじゃないと強制更新しない
+              // rawState.value = { ...rawState.value }
+              await refresh()
             }},
             'read' : { 'type': 'function', 'func': async (e, callback) =>{
-              otherState.value.path = e.payload[0];
-              await readFile(e.payload[0], otherState.value.subpath)
-              rawState.value = { ...rawState.value }
-              // const image = await asyncPostPng(rawState.value)
-              // canvasRef.value.redraw(image);
-              // window.haiterm.inputln(`echo ${e.detail.payload}`);
+              state.path.data.value = e.payload[0];
+              await readFile(e.payload[0], state.subpath.data.value)
+              await refresh()
             }},
-
+            'redraw' : { 'type': 'function', 'func': async (e, callback) =>{
+              await readFile(state.path.data.value, state.subpath.data.value)
+              await refresh()
+            }},
 
             'py1' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("py1", e.payload.join(' ') )
@@ -195,16 +237,22 @@
             }},
 
             'py' : { 'type': 'function', 'func': async (e, callback) =>{
-              const code = await asyncGetTxt(`local/${e.payload[0]}`)
-              callback(`========code========\r\n`);
-              callback(`${code}\r\n`);
-              callback(`========result========\r\n`);
-              const dst = await asyncPostJson("py", { 
-                code: code,
-                entry: "main",
-                args: JSON.stringify(JSON.parse(e.payload[1]))
-              } );
-              callback(`${JSON.stringify(dst)}`);
+              try{
+                const code = await asyncGetTxt(`local/${e.payload[0]}`)
+                callback(`========code========\r\n`);
+                callback(`${code}\r\n`);
+                callback(`========result========\r\n`);
+                const dst = await asyncPostJson("py", { 
+                  code: code,
+                  entry: "main",
+                  args: JSON.stringify(JSON.parse(e.payload[1] ?? "{}"))
+                } );
+    
+                callback(`${JSON.stringify(dst)}`);
+              }catch(e){
+                callback(`err : ${e}`);
+              }
+
             }},
             'ps' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("ps", e.payload);
@@ -214,7 +262,12 @@
           });
 
           /******** terminal ********/
-          const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+          // const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+          const customPrompt = async () => pty.prompt(await (async () =>{
+            const code = String(state.prompt.data.value);
+            const path = (await asyncPostJson("env", undefined))?.payload.current_dir ?? undefined;
+            return (new Function('src', `return (${code})(src)`))(path);
+          })());
           const onTermMounted = async (e) => {
             console.log('onTermMounted')
             await customPrompt();
@@ -240,15 +293,15 @@
               /* break -> e.preventDefault() */
               case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; } break;
 
-              case 'shift+ArrowUp': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift + 1 }; } break;
-              case 'shift+ArrowDown': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift - 1 }; } break;
-              case 'shift+ArrowRight': { rawState.value = { ...rawState.value , color: rawState.value.color + 1 }; } break;
-              case 'shift+ArrowLeft': { rawState.value = { ...rawState.value , color: rawState.value.color - 1 }; } break;
+              case 'shift+ArrowUp': { bitshift.value += 1; } break;
+              case 'shift+ArrowDown': { bitshift.value -= 1; } break;
+              case 'shift+ArrowRight': { color.value += 1 } break;
+              case 'shift+ArrowLeft': { color.value -= 1 } break;
 
-              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; } break;
-              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; } break;
-              case 'shift+ctrl+ArrowUp': { zoom.value = zoom.value+1; } break;
-              case 'shift+ctrl+ArrowDown': { zoom.value = zoom.value-1; } break;
+              case 'shift+ctrl+Semicolon': { zoom.value += 1; } break;
+              case 'shift+ctrl+Minus': { zoom.value -= 1; } break;
+              case 'shift+ctrl+ArrowUp': { zoom.value += 1; } break;
+              case 'shift+ctrl+ArrowDown': { zoom.value -= 1; } break;
 
               case 'IntlRo': { rendering.value = !rendering.value } break;
 
@@ -266,9 +319,8 @@
           const onMousemove = async (e, real, debounce)=> {
             if(debounce) {
               const dst = await asyncPostPixel({ x: real.x, y:real.y });
-              const code = String(otherState.value.stalker);//"(e) => e + 3"
-              const sum = new Function('src', `return (${code})(src)`);
-              const t = sum(dst.data)
+              const code = String(state.stalker.data.value); //"(e) => e + 3"
+              const t = (new Function('src', `return (${code})(src)`))(dst.data);
               
               const toHex = (n) => '0x' + (('00000000' + (n >>> 0).toString(16).toUpperCase()).substr(-8));
               stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${t}\r\n${toHex(dst.data)}`)
@@ -280,7 +332,7 @@
 
           const onWheel = async (e) =>{ 
             const dst = e.deltaY > 0 ? -1 : 1
-            rawState.value = {...rawState.value, bitshift : rawState.value.bitshift + dst } 
+            bitshift.value = bitshift.value + dst
           }
 
           /******** contextmenu ********/
@@ -298,11 +350,12 @@
               { type : 'div', value: 'Clip Coord', action: (e)=>{ navigator.clipboard.writeText(select.value.to_json()); } },
               { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ pty.input(` '${select.value.to_json()}'`, 'append'); } },
               { type : 'hr' },
-              { type : 'div', value: 'execute clip.py', action: (e)=>{ 
-                pty.input(`py scripts/clip.py '${JSON.stringify(select.value.get())}'`, 'execute') 
+              { type : 'div', value: 'execute clip_csv.py', action: (e)=>{ 
+                pty.input(`py scripts/clip_csv.py '${JSON.stringify(select.value.get())}'`, 'execute') 
               } },
-              { type : 'div', value: 'execute clip_png.py', action: (e)=>{ 
-                pty.input(`py scripts/clip_png.py '${JSON.stringify(select.value.get())}'`, 'execute')
+              { type : 'div', value: 'execute clip_csv.py png', action: (e)=>{ 
+                const args = { ...select.value.get(), bayer : -2 }
+                pty.input(`py scripts/clip_csv.py '${JSON.stringify(args)}'`, 'execute')
               } },
               { type : 'hr' },
               { type : 'div', value: 'Append command to Terminal', action: (e)=>{ pty.input(`py scripts/script.py '${select.value.to_json()}'`, 'append') } },
@@ -313,6 +366,9 @@
             ],
             "OUT" : [
               { type : 'div', value: 'Copy Full', action: (e)=>{ pty.input("clip", 'execute') } },
+              { type : 'hr' },
+              { type : 'div', value: 'open File Dialog', action: (e)=>{ pty.input("open", 'execute') } },
+              { type : 'div', value: 'Show/Hide Term', action: (e)=>{ termShow.value = !termShow.value; } },
             ]
           });
 
@@ -322,26 +378,34 @@
             ? zip(from(onDrop), fromEvent(wv, 'newWindowReq'))
             : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
           ).subscribe( async ([e1, e2]) => {
+            const execute = state.execute.data.value ? 'execute' : 'overwrite';
             switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
               case 'canvas:drop_string'  : { pty.input(`read ${JSON.stringify(e1.detail)}`, 'overwrite') } break;
-              case 'canvas:drop_file'    : { pty.input(`read ${JSON.stringify(e1.detail)}`, 'overwrite') } break;
-              case 'canvas:req_http'     : { pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, 'overwrite') } break;
-              case 'canvas:req_file'     : { 
-                if(e2.detail?.payload.match('.(py|txt)$')){
-                  pty.input(`py ${JSON.stringify(e2.detail?.payload)}`, 'overwrite') 
+              case 'canvas:drop_file'    : { 
+                const path = e1.detail
+                if(path.match('.(py|txt)$')){
+                  pty.input(`py ${JSON.stringify(path)}`, 'overwrite') 
                 }else{
-                  pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, 'overwrite')
+                  pty.input(`read ${JSON.stringify(path)}`, 'overwrite')
+                }
+              } break;
+              case 'canvas:req_http'     : { pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, execute) } break;
+              case 'canvas:req_file'     : { 
+                const path = e2.detail?.payload
+                if(path.match('.(py|txt)$')){
+                  pty.input(`py ${JSON.stringify(path)}`, execute) 
+                }else{
+                  pty.input(`read ${JSON.stringify(path)}`, execute)
                 }
               } break;
 
               case 'terminal:drop_string': { pty.input(JSON.stringify(e1.detail)); } break;
               case 'terminal:drop_file'  : { pty.input(JSON.stringify(e1.detail)); } break;
-              case 'terminal:req_http'      : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
-              case 'terminal:req_file'      : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:req_http'   : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:req_file'   : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
 
               default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
             }
-                //    pty.input(`selenium ${JSON.stringify(e.detail.payload)}`, 'append')
           });
  
 
@@ -364,7 +428,7 @@
             console.log('app mounted')
             termShow.value = true;
             zoom.value = 0;
-            rawState.value = { ...rawState.value };
+            await refresh()
             isBusy.value = false;
             nextTick(() => { console.log('app rendered'); });
           });
@@ -375,7 +439,7 @@
             canvasRef, contextRef, stalkerRef,
             termRef, onTermMounted, pty,
             zoom, select, rendering,
-            testRef
+            testRef, fontSize
           }
         }
       });

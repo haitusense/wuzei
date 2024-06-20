@@ -1,8 +1,27 @@
 //@ts-check
-
 console.log("lib.js")
 
+/**
+ * @param {number} msec
+ * @returns {Promise}
+ */
 const sleep = msec => new Promise(resolve => setTimeout(resolve, msec));
+
+
+/**
+ * リフレッシュレート使うなら
+ * @returns {Promise}
+ */
+const waitAnimationFrame = () => new Promise(resolve => globalThis.requestAnimationFrame(resolve));
+/*
+let start = Date.now();
+for (let i=0;i<10;i++) {
+  await waitAnimationFrame();         // この行で、次の更新タイミングまで待つ
+  const millis = Date.now() - start;
+  console.log(`time : ${millis} ms`); // 経過時刻を取得
+}
+*/
+
 
 /**
  * @param {string} src
@@ -272,7 +291,7 @@ function setStr(){
 }
 
 export { 
-  sleep, indoc, asyncCheckWebview, 
+  sleep, waitAnimationFrame, indoc, asyncCheckWebview, 
   post, asyncGetTxt, asyncPostJson, asyncPostPixel, asyncPostPng, setState,
   readFile
 };

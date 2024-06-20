@@ -1,5 +1,7 @@
 use colored::*;
 use include_dir::Dir;
+use urlencoding::decode;
+use std::path::PathBuf;
 
 pub fn minetype(path:&str) -> &str {
   match path {
@@ -124,7 +126,10 @@ pub async fn async_custom_protocol_resource(resource: &Dir<'static>, url: &str) 
 
 pub async fn async_custom_protocol_local(url: &str) -> wry::http::Response<Vec<u8>> {
   println!("{} local path {:?}", "custom protocol".on_green(), url);
-  let content = std::fs::read(&url).expect("could not read file");
+  let mut path = PathBuf::new();
+  path.push(decode(url).expect("UTF-8").to_string());
+  println!("{} local path {:?}", "custom protocol".on_green(), path);
+  let content = std::fs::read(path).expect("could not read file");
   // let content = std::fs::read_to_string(&url).expect("could not read file");
   let dst = ResContent::OTHER(minetype(url), &content);
   // let dst: ResContent = match url {

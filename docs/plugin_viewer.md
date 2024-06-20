@@ -42,19 +42,20 @@ ps> wuzei.exe -s resource:viewer.html
 | **read file**                     | drag and drop [*]        |                        | ```read [path]``` |
 | **select**                        | left + move [*]          |                        | ```select [left] [top] [right] [bottom]``` |
 | **context menu**                  | right [*]                |                        | |
-| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```bitshift [num]``` |
+| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```set bitshift [num]``` |
 | **zoom up/down** (browser)        | ctrl + wheel             | ctrl + '+'/'-'         | |
 | **zoom reset** (browser)          |                          | ctrl + 0               | |
-| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```zoom [level]``` |
+| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```set zoom [level]``` |
 |                                   |                          | shift + ctrl + ↑/↓     | |
-| **mono/color**                    |                          | shift + ←/→            | ```color [num]``` |
+| **mono/color**                    |                          | shift + ←/→            | ```set color [num]``` |
 | **rendering**                     |                          | '\\'                   | |
 | echo                              |                          |                        | ```echo [args]``` |
 | get current_dir                   |                          |                        | ```env``` |
 | set current_dir                   |                          |                        | ```cd [path]``` |
 | show state                        |                          |                        | ```state``` |
 | set state                         |                          |                        | ```set [key] [value]``` |
-| refresh                           |                          |                        | ```refresh``` |
+| refresh display                   |                          |                        | ```refresh``` |
+| redraw form file                  |                          |                        | ```redraw``` |
 | getpixel                          |                          |                        | ```getpixel [x] [y]``` |
 | scripting (js eval)               |                          |                        | ```js1 [command]``` |
 | scripting (py eval)               |                          |                        | ```py1 [command]``` |
@@ -137,11 +138,11 @@ terminal> state
 - Returns : dictionary object (Serialize to Json in rust)
 
 ```python
-def main(args):
+def main(args):                    #  {} when args is empty 
   Px = Pixel #type: ignore
   print('args :', args)
   print('dst :', Px.get(10, 10))
   Px.set(10, 10, 255)
   args["x"] = 10
-  return args
+  return args                      # dictionary object
 ```

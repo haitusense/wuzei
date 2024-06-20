@@ -30,7 +30,7 @@
 [*3] browser default event
 [*4] webview event
 
-- Upcoming?
+- Upcoming? (vs code shortcut)
   - scroll to bottom : ctrl + l
   - Scroll to the previous/next command : Ctrl+Up/Down
   - Move cursor word by word : alt+Left/Right
