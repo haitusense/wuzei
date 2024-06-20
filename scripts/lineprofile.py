@@ -25,6 +25,13 @@ def main(args):
   right  = args.get('right', Px.width())
   bottom = args.get('bottom', Px.height())
   axis = args.get('axis', 0) # axis direction
+
+  # odd/evenでselectの切り上げ切り下げ
+  left   = left + (left % 2)
+  top    = top + (top % 2)
+  right  = right - (right % 2)
+  bottom = bottom - (bottom % 2)
+
   src_df = pd.DataFrame(Px.to_np())
   df = src_df.iloc[top:bottom, left:right]
 
