@@ -190,7 +190,7 @@
             /* rust */
             'env' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("env", undefined )
-              callback(JSON.stringify(dst));
+              callback(JSON.stringify(dst,undefined,2).replace(/\n/g, '\r\n'));
             }},
             'cd' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("cd", e.payload[0] )

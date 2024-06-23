@@ -4,6 +4,7 @@
 - change : rename/refactoring
 - change : Separate terminal logic blocks terminal ```pty```
 - change : history/cursor select&copy&paste/scroll/drop logic/auto wrap in terminal
+- change : add uuid
 - add : hashmap(command) in terminal logic blocks
 - add : JSDoc
 - add : stalker display replacement function

@@ -17,6 +17,8 @@ include_dir = "0.7.3"
 strum = { version = "0.26", features = ["derive"] }
 strum_macros = "0.26"
 
+uuid = { version = "1.8.0", features = ["v4", "serde"] }
+
 clap = { version = "4.5.1", features = ["derive"] }
 tokio = { version = "1.36.0" }
 serde = { version = "1.0.197", features = ["derive"] }

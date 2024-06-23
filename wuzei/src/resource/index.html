@@ -57,7 +57,6 @@
         filter, first, delay, map, takeUntil, debounceTime, scan,
         bufferToggle, switchMap, mergeMap,  
         share, tap, zip
-
       } = rxjs;
       const { from, fromEvent } = VueUse;
 
@@ -66,8 +65,7 @@
       const app = createApp({
         setup() {
           const isBusy = ref(true);
-          const [termShow, termRef] = [ref(false), ref(null)];
-          const onDrop = ref(false);
+          const [termShow, termRef, onDrop] = [ref(false), ref(null), ref(false)];
 
           const fontSize = ref(12)
           const state = {
@@ -114,7 +112,7 @@
             /* rust */
             'env' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("env", undefined )
-              callback(JSON.stringify(dst));
+              callback(JSON.stringify(dst,undefined,2).replace(/\n/g, '\r\n'));
             }},
             'cd' : { 'type': 'function', 'func': async (e, callback) =>{
               const dst = await asyncPostJson("cd", e.payload[0] )
@@ -183,11 +181,6 @@
               case "shift+ctrl+KeyA": { pty.log("testwrite\r\n"); } break;
               case "shift+ctrl+KeyX": { pty.hideprompt(); } break;
               case "shift+ctrl+KeyC": { pty.showprompt(); } break;
-              
-              // コマンド送信テスト
-              // case "shift+ctrl+KeyA": { pty.log("testwrite\r\n"); } break;
-              // case "shift+ctrl+KeyX": { pty.hideprompt(); } break;
-              // case "shift+ctrl+KeyC": { pty.showprompt(); } break;
 
               default: {} return;
             }

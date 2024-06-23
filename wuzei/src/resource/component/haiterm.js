@@ -232,7 +232,6 @@ class CurLineManager {
   /******** method ********/
 
   /**
-   * 
    * @param {string} str 
    */
   new(str){
@@ -364,7 +363,7 @@ class CurLineManager {
      */
     syntaxHighlighting : (src, start, length) => { // 色付け
       let flag = false;
-      let code = CurLineManager.CmdParser.splitcom(src).reduce((acc, match, index)=>{
+      let code = CurLineManager.CmdParser.splitcom(src).reduce((acc, match, _index)=>{
         const c = (() => {
           if(match.full.trim() === ""){
             return ESC.DEF;
@@ -617,22 +616,26 @@ class WPty {
 
   /**
    * promptの表示のbuild
-   * @param {CurLineManager} cur 
+   * @param {CurLineManager|undefined} cur 
    * @param {CurLineManager} old_cur 
    * @returns {CurLineManager}
    */
   #buildOutput(cur, old_cur) {
     const oldc = old_cur.currentLineWrap(this.#prompt_str, this.#termCursor.wrap - 1)
-    const newc = cur.currentLineWrap(this.#prompt_str, this.#termCursor.wrap - 1)
-
     const o_rollup = `${ESC.upLine(oldc.y) + ESC.move(0) + ESC.delAllAfterCursor}`
-    const n_rollup = `${ESC.upLine(newc.fy) + ESC.move(0)}`
-    const curpos = `${ESC.downLine(newc.y) + ESC.move(newc.x)}`
-    // console.log("buildOutput", oldc.y, newc.y, newc.fy)
-    this.#onData(o_rollup + newc.data + n_rollup + curpos);
-    this.#onChange(this.#cur.str)
-    old_cur = cur.clone()
-    return cur.clone();
+    if(cur){
+      const newc = cur.currentLineWrap(this.#prompt_str, this.#termCursor.wrap - 1)
+      const n_rollup = `${ESC.upLine(newc.fy) + ESC.move(0)}`
+      const curpos = `${ESC.downLine(newc.y) + ESC.move(newc.x)}`
+      this.#onData(o_rollup + newc.data + n_rollup + curpos);
+      this.#onChange(this.#cur.str)
+      old_cur = cur.clone()
+      return cur.clone();
+    }else{
+      // clear only
+      this.#onData(o_rollup);
+      return old_cur
+    }
   }
 
   /**
@@ -673,7 +676,7 @@ class WPty {
    */
   hideprompt(){
     if(this.#isWaitCom){
-      this.#onData(`${ESC.move(0)}${ESC.eraseLine}`);
+      this.#buildOutput(undefined, this.#old_cur);
       this.#isWaitCom = false
     }
   }
@@ -981,7 +984,7 @@ const Haiterm = {
             console.log(terminal.buffer._normal.cursorY) // colsで現在75colなので...折り返し行数は分かってる
             terminal.write("a")
             break;
-          case 'ctrl+x':
+          case 'ctrl+x': // for debug
             console.log(terminal.getSelectionPosition())
             terminal.write("\b") // 複数行になったら\bじゃ戻らない
             break;
@@ -1017,9 +1020,6 @@ const Haiterm = {
         /* rustで受ける際
           window.ipc.postMessage(JSON.stringify({
             altKey : e.domEvent.altKey,
-            ctrlKey : e.domEvent.ctrlKey,
-            metaKey : e.domEvent.metaKey,
-            shiftKey : e.domEvent.shiftKey,
             key : e.domEvent.key,
             charCode : e.domEvent.charCode,
             code : e.domEvent.code,
@@ -1032,13 +1032,11 @@ const Haiterm = {
         if(scrollFunc){
           const buf = scrollFunc;
           scrollFunc = undefined;
-          //@ts-ignore
           buf(e);
         }
       });
       // not use : terminal.prompt = () =>{ };
       // not use : terminal.onData(e => { });
-      // not use :
 
       // pty.onDataでは反映が取得できないがonCursorMoveで反映が取得できる
       terminal.onCursorMove(e => { 

@@ -59,10 +59,12 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       response(ResContent::JSON(&dst))
     },
     TypeNames::Env => {
+      let args = crate::get_args().lock().unwrap().clone();
       let dst = serde_json::json!({ 
         "status": "successed",
         "payload": {
-          "current_dir": std::env::current_dir()?, 
+          "current_dir": std::env::current_dir()?,
+          "args": args
         }
       });
       response(ResContent::JSON(&dst))

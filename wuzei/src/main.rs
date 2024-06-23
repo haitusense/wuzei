@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use anyhow::Context;
 use colored::*;
 use include_dir::{include_dir, Dir};
-use huazhi::{ HuazhiBuilder, HuazhiDir };
+use huazhi::{ HuazhiDir, HuazhiBuilder };
 
 #[derive(clap::ValueEnum, Serialize, Deserialize, Clone, Debug)]
 enum ConsoleType {
@@ -29,11 +29,11 @@ struct Args {
   #[arg(short, long, default_value=r#"["app.js"]"#)]
   register_javascript: String,
 
-  #[arg(short, long, default_value="wuzeiNamedPipe")]
-  namedpipe: String,
+  #[arg(short, long, help = "defalut : namedpipe_[uuid]")]
+  namedpipe: Option<String>,
 
-  #[arg(short, long, default_value="wuzeiMemoryMapped")]
-  memorymapped: String
+  #[arg(short, long, help = "defalut : memorymapped_[uuid]")]
+  memorymapped: Option<String>,
 }
 
 impl Args {
@@ -43,12 +43,15 @@ impl Args {
     Ok(serde_json::to_value(&self).context("err")?)
   }
 
-  /* `--help` オプションが渡された場合コンソールをアタッチ */
+  /* 
+    `--help` オプションが渡された場合コンソールをアタッチ
+    uuidの生成
+  */
   pub fn parse_with_attach_console() -> Self {
     if std::env::args().any(|arg| arg == "--help" || arg == "-h" || arg == "--version" || arg == "-V" ) {
       unsafe { huazhi::console::attach_console(); }
     }
-    let args = Args::parse();
+    let mut args = Args::parse();
 
     match args.console_type {
       Some(ConsoleType::AllocConsole) => unsafe { huazhi::console::alloc_console(); },
@@ -56,9 +59,22 @@ impl Args {
       _=>{ }
     };
 
+    args.set_uuid();
     args
   }
   
+  fn set_uuid(&mut self) {
+    let uuid = uuid::Uuid::new_v4();
+    if self.namedpipe.is_none() {
+      self.namedpipe = Some(format!("namedpipe_{}", uuid));
+      println!("{} : {:?}", "generated namedpipe path".blue(), self.namedpipe);
+    }
+    if self.memorymapped.is_none() {
+      self.memorymapped = Some(format!("memorymapped_{}", uuid));
+      println!("{} : {:?}", "generated memorymapped path".blue(), self.memorymapped);
+    }
+  }
+
 }
 
 /* read resource */
@@ -72,7 +88,6 @@ static ARGS: std::sync::OnceLock<Mutex<Args>> = std::sync::OnceLock::new();
 static PX: std::sync::OnceLock<Mutex<huazhi::tao::event_loop::EventLoopProxy<huazhi::event_handler::UserEvent>>> = std::sync::OnceLock::new();
 
 fn get_args() -> &'static Mutex<Args> { ARGS.get_or_init(|| Mutex::new(Args::parse_with_attach_console())) }
-
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -90,11 +105,9 @@ async fn main() -> anyhow::Result<()> {
     .with_min_inner_size(huazhi::wry::dpi::PhysicalSize::new(320.0, 120.0))
     .build(&event_loop).context("err")?;
 
-  println!("{}", "set mmf".blue());
   logic::mmf_init(320, 240);
 
-  println!("{}", "set namedpipe".blue());  
-  huazhi::namedpipe::pipe_builder(args.namedpipe, event_loop.create_proxy(), |res| { 
+  match huazhi::namedpipe::pipe_builder(args.namedpipe.unwrap(), event_loop.create_proxy(), |res| { 
     if serde_json::from_str::<serde_json::Value>(res).is_ok() {
       let hoge = get_args().lock().unwrap().clone();
       let json = serde_json::to_string(&hoge).unwrap();
@@ -102,7 +115,10 @@ async fn main() -> anyhow::Result<()> {
     } else { 
       None
     }
-  }).unwrap();
+  }) {
+    Ok(_) => { },
+    Err(e) => println!("{} {:?}", "err : set namedpipe".red(), e),
+  };
 
   /* setting webview */
   let webview = huazhi::wry::WebViewBuilder::new(&window)
