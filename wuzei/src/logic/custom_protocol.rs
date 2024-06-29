@@ -1,4 +1,5 @@
 use colored::*;
+use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::process::Stdio;
 use tokio_util::codec::*;
@@ -95,6 +96,7 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       println!("{:?}", payload);
       let shift = payload["bitshift"].as_i64().unwrap_or(0) as i32;
       let color = payload["color"].as_i64().unwrap_or(0) as i32;
+      let matrix = serde_json::from_value::<[[f64; 3]; 3]>(payload["matrix"].to_owned()).ok();
 
       let mut mmf = super::get_mmf().lock().unwrap();
       let value = mmf.get_value();
@@ -102,7 +104,7 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       let height = value["height"].as_u64().unwrap() as usize;
 
       let acc = mmf.to_accessor();
-      response(ResContent::IMAGE(hraw::processing::slice_to_png(acc.to_slice::<i32>(), width, height, shift, color)))
+      response(ResContent::IMAGE(hraw::processing::slice_to_png(acc.to_slice::<i32>(), width, height, shift, matrix, color)))
     },
     TypeNames::GetPixel => {
       use huazhi::memorymappedfile::*;
@@ -134,14 +136,31 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       use hraw::{*, buffer::*};
       use huazhi::memorymappedfile::*;
       let path = payload["path"].as_str().unwrap_or("");
-      let subpath = payload["subpath"].as_str().unwrap_or("data.raw");
+      
       let mut hraw = hraw::Hraw::new(path).unwrap();
       hraw.info().unwrap();
       let size = hraw.header().to_size();
 
       super::mmf_init(size.0, size.1);
       let mut mmf = super::get_mmf().lock().unwrap();
-      let _ = mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, subpath);
+
+      // 数値か文字列か判断
+      // (|| { 
+      //   println!("test subpath : {} {:?}", payload["subpath"].is_number(), payload["subpath"]);
+      //   if let Some(n) = payload["subpath"].as_i64() {
+      //     mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, n as usize);
+      //     return;
+      //   }
+      //   if let Some(n) = payload["subpath"].as_str() {
+      //     mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, n);
+      //     return;
+      //   }
+      // })();
+
+      let _ = match payload["subpath"].as_i64() {
+        Some(n)=> mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, n as usize),
+        None => mmf.to_accessor().to_mut_slice::<i32>().from_hraw(path, payload["subpath"].as_str().unwrap_or("data.raw"))
+      };
 
       let dst = serde_json::json!({ "status": "successed", "payload": path });
       response(ResContent::JSON(&dst))
@@ -159,9 +178,6 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       let dst = serde_json::json!({ "status": "successed", "payload": path });
       response(ResContent::JSON(&dst))
     },
-    // py.eval_bound
-    // py.run_bound(args.join("\r\n").as_str(),None, None)?;
-    // py.from_code_bound
     TypeNames::Py1 => {
       use pyo3::prelude::*;
       let args = payload.as_str().unwrap_or("null");

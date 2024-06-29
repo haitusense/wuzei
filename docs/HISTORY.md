@@ -1,10 +1,11 @@
 # History
 
-## 0.1.6 / huazhi 0.1.4 (2024--)
+## 0.1.6 / huazhi 0.1.4 (2024-06-29)
 - change : rename/refactoring
 - change : Separate terminal logic blocks terminal ```pty```
 - change : history/cursor select&copy&paste/scroll/drop logic/auto wrap in terminal
 - change : add uuid
+- change : hraw 0.1.2 / matrix, scripting
 - add : hashmap(command) in terminal logic blocks
 - add : JSDoc
 - add : stalker display replacement function
@@ -25,7 +26,7 @@
 ## 0.1.3 (2024-06-03)
 - update : wry & tao version
 - fix : F5 reload (event_loop-init)
-- add : hraw scripting
+- add : hraw scripting test
 - add : terminal
 - add : window move / remember the window size and position
 - change : custom protocol logic / ipc handler logic

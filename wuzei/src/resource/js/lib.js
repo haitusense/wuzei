@@ -219,19 +219,21 @@ function asyncLoadImage(path) {
 
 /**
  * @param {string} path
- * @param {string} subpath
+ * @param {string} subpath --内部でstring/intの判別あり
  */
 const readFile = async (path, subpath) => {
   switch(path.split('.').pop()?.toLowerCase()){
     case 'hraw':
     case 'zip': {
-      const res = await asyncPostJson("readraw", { path: path, subpath: subpath });
-      console.log("read raw file", path, subpath);
+      const json = { path: path, subpath: isNaN(Number(subpath)) ? subpath : Number(subpath) }
+      const res = await asyncPostJson("readraw", json);
+      console.log("read raw file", JSON.stringify(json));
     } break;
     case 'png':
     case 'bmp': {
-      const res = await asyncPostJson("readpng", { path: path });
-      console.log("read png file", path, subpath);
+      const json = { path: path }
+      const res = await asyncPostJson("readpng", json);
+      console.log("read png file", JSON.stringify(json));
     } break;
     default: {
       // const json = { path : e.path };

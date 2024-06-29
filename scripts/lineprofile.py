@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 # import seaborn as sns
 from plotnine import *
+from plotnine.data import mpg
 
 def lineprof(df, x, y, axis):
   
@@ -11,7 +12,7 @@ def lineprof(df, x, y, axis):
   dst["index"] = dst.index
   dst['dt_rolling'] = dst['data'].rolling(5, center=True).mean() - dst['data']
   dst['dt'] = dst['data'].diff()
-  print(dst)
+  print(dst.head())
   return dst
   # sns.relplot(x='index', y=['data','dt'], data=v1, kind='line')
   # plt.axvline(v1['dt'].idxmax(), 0, 1, color='red', linestyle="dotted")
@@ -49,6 +50,7 @@ def main(args):
   #   + geom_line()
   #   + geom_vline(xintercept=d1['dt'].idxmax(), color='red')
   # )
+
   p = (
     ggplot()
 
@@ -68,5 +70,8 @@ def main(args):
     + geom_line(data = d4, mapping = aes(x="index", y="data"), color='blue')
     + geom_vline(xintercept=d4['dt'].idxmax(), color='blue')
   )
-  print(p)
-  return args
+
+  # p.save(filename='plot.svg', format='svg')
+  p.show()
+
+  return { 'state': 'success' }

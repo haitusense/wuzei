@@ -23,7 +23,7 @@
     <div id ="app">
       <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
         <!-- canvas -->
-        <vue-pane ref="testRef" style="overflow:scroll; position: relative; background-color: gray;">
+        <vue-pane ref="testRef" id="a" style="overflow:scroll; position:relative; background-color:gray;">
           <canvas-ex 
             :margin="20"
             ref = "canvasRef"
@@ -33,7 +33,7 @@
             @on-context="onContextmenu"
             @on-mousemove="onMousemove"
             @on-wheel="onWheel"
-            @on-drop="(e)=>{ onDrop = e}"
+            @on-drop="(e)=>{ onDrop = e }"
           ></canvas-ex>
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
@@ -88,31 +88,34 @@
 
           const select = ref(Rect.new());
           const [zoom, rendering, fontSize] = [ref(null), ref(true), ref(12)];
-          const [bitshift, color] = [ref(0), ref(0)]
+          const [bitshift, color, matrix] = [ref(0), ref(0), ref( [[1,0,0],[0,1,0],[0,0,1]] )]
           // const rawState = ref({ bitshift :0, color:0, });
 
           const state = {
             bitshift : { type: Number, data: bitshift },
             color : { type: Number, data: color },
+            matrix : { type: Object, data: matrix },
             zoom : { type: Number, data: zoom },
             rendering : { type: Boolean, data: rendering },
             path : { type: String, data: ref("") },
-            subpath : { type: String, data: ref("data.raw") },
+            subpath : { type: String, data: ref("data.raw") }, // ここ数値と共存できない？
             stalker : { type: String, data: ref("(e) => e + 0") },
             fontSize : { type: Number, data: fontSize },
             test : { type: Object, data: ref({a:0, b:0}) },
             execute :  { type: Boolean, data: ref(true) },
             prompt : { type: String, data: ref("(path) => (path ?? 'offline') + '> '") },
-
           }
 
           /******** method ********/
           const refresh = async () => {
             stalkerRef.value.intext('shift+0', `bitshift : ${bitshift.value}\r\ncolor : ${color.value}`)
-            const image = await asyncPostPng({ bitshift: bitshift.value, color:color.value })
-            canvasRef.value.redraw(image);
+            const image = await asyncPostPng({ bitshift: bitshift.value, color:color.value, matrix:matrix.value })
+            canvasRef.value.draw(image);
           }
-
+          const redraw = async () => {
+            await readFile(state.path.data.value, state.subpath.data.value)
+            await refresh()
+          }
           /******** busy ********/
           from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
 
@@ -247,7 +250,8 @@
                   entry: "main",
                   args: JSON.stringify(JSON.parse(e.payload[1] ?? "{}"))
                 } );
-    
+                // '["a"]'
+                // args : (() => { try { return JSON.parse(e.payload[1] ?? "{}") } catch { return e.payload })();
                 callback(`${JSON.stringify(dst)}`);
               }catch(e){
                 callback(`err : ${e}`);
@@ -284,11 +288,11 @@
           fromEvent(document, 'keydown').pipe(
             filter( n => n.repeat === false ), 
             filter(n => n.key.startsWith('Arrow')
-              ||n.key.startsWith('F')
+              || n.key.startsWith('F')
               || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
             )
           ).subscribe( async e => {
-            console.log(e)
+            // console.log(e)
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
             switch(keys){
               /* break -> e.preventDefault() */
@@ -303,6 +307,17 @@
               case 'shift+ctrl+Minus': { zoom.value -= 1; } break;
               case 'shift+ctrl+ArrowUp': { zoom.value += 1; } break;
               case 'shift+ctrl+ArrowDown': { zoom.value -= 1; } break;
+
+              case 'shift+ctrl+Digit0': { state.subpath.data.value = "0"; await redraw(); } break;
+              case 'shift+ctrl+Digit1': { state.subpath.data.value = "1"; await redraw(); } break;
+              case 'shift+ctrl+Digit2': { state.subpath.data.value = "2"; await redraw(); } break;
+              case 'shift+ctrl+Digit3': { state.subpath.data.value = "3"; await redraw(); } break;
+              case 'shift+ctrl+Digit4': { state.subpath.data.value = "4"; await redraw(); } break;
+              case 'shift+ctrl+Digit5': { state.subpath.data.value = "5"; await redraw(); } break;
+              case 'shift+ctrl+Digit6': { state.subpath.data.value = "6"; await redraw(); } break;
+              case 'shift+ctrl+Digit7': { state.subpath.data.value = "7"; await redraw(); } break;
+              case 'shift+ctrl+Digit8': { state.subpath.data.value = "8"; await redraw(); } break;
+              case 'shift+ctrl+Digit9': { state.subpath.data.value = "9"; await redraw(); } break;
 
               case 'F1': { rendering.value = !rendering.value } break;
               case "F2": { pty.input("refresh", 'execute'); } break;

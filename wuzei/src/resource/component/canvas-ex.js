@@ -4,11 +4,7 @@
 const [ Vue, rxjs, VueUse ] = [ window.Vue, window.rxjs, window.VueUse ];
 
 const { ref, nextTick, onMounted, computed } = Vue;
-const { /* from */ /* fromEvent */ of, merge, partition,
-  filter, first, delay, map, takeUntil, debounceTime, scan,
-  bufferToggle, switchMap, mergeMap,  
-  share, tap
-} = rxjs;
+const { /* from */ /* fromEvent */  filter, map, takeUntil, debounceTime, mergeMap, share, tap } = rxjs;
 const { from, fromEvent } = VueUse;
 
 /**
@@ -138,12 +134,12 @@ const styledObj = {
 
 /**
  * props : margin, zoom, select, rendering \
- * methods : redraw, clip \
+ * methods : draw, clip \
  * emit : on-context, on-move, on-drop, update:zoom, update:select \
  */
 const canvasEx = {
   template: `
-    <div id="canvas" ref="divRef" style="position:absolute; top:0;left:0;right:0;bottom:0;">
+    <div id="canvas" ref="divRef" style="position:absolute; top:0; left:0; right:0; bottom:0;">
       <canvas ref="canvasRef"
         :style= "{ ...styled, 
           left: props.margin*cnvParams.zoomfactor + 'px', 
@@ -174,8 +170,8 @@ const canvasEx = {
     /**
      * @param {any} image
      */
-    redraw(image){
-      console.log("redraw")
+    draw(image){
+      // console.log("draw")
       this.cnvParams = { ...this.cnvParams, width:image.width, height:image.height }
       nextTick(()=>{
         const ctx = this.canvasRef.getContext("2d", { alpha: false, willReadFrequently: true, });
@@ -203,7 +199,7 @@ const canvasEx = {
         if(blob == null) return;
         await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
       }, 'image/png');
-      console.log("clipboard")
+      // console.log("clipboard")
     }
   },
   setup(props, { emit }) {

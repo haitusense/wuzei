@@ -9,6 +9,8 @@ const { onMounted, nextTick, onUnmounted, ref } = Vue;
 const { filter } = rxjs;
 const { fromEvent } = VueUse;
 
+import yargsParser from '../yargs-parser@21.1.1/browser.js'
+import {tokenizeArgString} from '../yargs-parser@21.1.1/build/lib/tokenize-arg-string.js'
 /**************** ESC ****************/
 
 /** @enum {string} */
@@ -331,6 +333,18 @@ class CurLineManager {
      * @returns {{full:string, captured:string, index:number}[]}
      */
     splitcom : (src) =>{
+      // const a = tokenizeArgString(src).reduce((acc, cur) => {
+      //   const index = acc.src.indexOf(cur, 0);
+      //   const next = acc.src.slice(index);
+      //   return {
+      //     src : next[1],
+      //     array : [...acc.array, next[0]]
+      //   }
+      // }, { src : src, array: [] });
+      // const argv = yargsParser(src)._;
+      // console.log(argv, a, yargsParser(src))
+      // console.log(src, src.split(argv[0], 2))
+
       // A: const result = src.match(/"([^"]*?)"|'([^']*?)'|[^\s"']+/g);
       // B: const result = src.split(/(?:"([^"]+)"|'([^']*?)'|([^\s"']+)) ?/).filter(e => e)
       // return Array.from(src.matchAll(/"([^"]*?)"|'([^']*?)'|([^\s"']+)|([\s]+)/g)).map((n, index, arr) => {
