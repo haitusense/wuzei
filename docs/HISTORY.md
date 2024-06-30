@@ -5,7 +5,7 @@
 - change : Separate terminal logic blocks terminal ```pty```
 - change : history/cursor select&copy&paste/scroll/drop logic/auto wrap in terminal
 - change : add uuid
-- change : hraw 0.1.2 / matrix, scripting
+- change : hraw 0.1.2 / matrix, scripting, subpath index
 - add : hashmap(command) in terminal logic blocks
 - add : JSDoc
 - add : stalker display replacement function
@@ -48,8 +48,11 @@
 
 - mmf, memorymapped for scripting
 - WebAssembly
-- scripting in hraw
-  - 平均データではなく加算データ+fixed pointに切り替えるか
+
 - 文字列のnull処理, unwarp減らす
 - クリップボードコピーに\n含まれてた時の扱い
 - multibyte characters / encodeURIComponent()
+
+- scripting in hraw
+  - 平均データではなく加算データ+fixed pointに切り替えるか
+  index無かった時に止まる？

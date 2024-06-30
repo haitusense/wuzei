@@ -1,5 +1,4 @@
 use colored::*;
-use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::process::Stdio;
 use tokio_util::codec::*;
@@ -138,7 +137,7 @@ async fn logic(key: TypeNames, payload: serde_json::Value, mutex: Arc<Mutex<huaz
       let path = payload["path"].as_str().unwrap_or("");
       
       let mut hraw = hraw::Hraw::new(path).unwrap();
-      hraw.info().unwrap();
+      // hraw.info().unwrap();
       let size = hraw.header().to_size();
 
       super::mmf_init(size.0, size.1);
