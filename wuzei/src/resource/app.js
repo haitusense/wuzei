@@ -22,8 +22,3 @@ window.console.log = (...args) => {
   // in event loop block
 }());
 
-
-/******** ipc/protocol helper ********/
-(function (){
-
-}());

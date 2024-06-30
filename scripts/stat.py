@@ -1,25 +1,53 @@
 import numpy as np
+import matplotlib.pyplot as plt
+
+def plot(arg1, arg2, arg3, arg4, arg5):
+  try:
+    import seaborn as sns
+    sns.histplot(arg1.ravel())
+    sns.histplot(arg2.ravel())
+    sns.histplot(arg3.ravel())
+    sns.histplot(arg4.ravel())
+    sns.histplot(arg5.ravel())
+  except ImportError as e:
+    print(f"ImportError: {e}")
+    fig, ax = plt.subplots()
+    ax.hist(arg1.ravel())
+    ax.hist(arg2.ravel())
+    ax.hist(arg3.ravel())
+    ax.hist(arg4.ravel())
+    ax.hist(arg5.ravel())
 
 def main(args):
   Px = Pixel #type: ignore
   print('args   :', args)
-  mat = Px.to_np()
+  src_mat = Px.to_np()
+  left    = args.get('left', 0)
+  top     = args.get('top', 0)
+  right   = args.get('right', Px.width())
+  bottom  = args.get('bottom', Px.height())
+  mat = src_mat[top:bottom, left:right]
   print('---full---')
   print('width: {}, height: {}, size: {}'.format(Px.width(), Px.height(), mat.size))
-  print(mat)
+  print(src_mat)
   print('---selected---')
-  sub_mat = mat[args['top']:args['bottom'], args['left']:args['right']]
-  sub_mat1 = sub_mat[0::2, 0::2]
-  sub_mat2 = sub_mat[1::2, 0::2]
-  sub_mat3 = sub_mat[0::2, 1::2]
-  sub_mat4 = sub_mat[1::2, 1::2]
-  print('size: {}'.format(sub_mat.size))
-  print(sub_mat)
-  print('---statistics---')
-  #注：clip位置でbayer順が変化する
-  print('max : {}, {}, {}, {}, {}'.format(np.max(sub_mat), np.max(sub_mat1), np.max(sub_mat2), np.max(sub_mat3), np.max(sub_mat4)))
-  print('min : {}, {}, {}, {}, {}'.format(np.min(sub_mat), np.min(sub_mat1), np.min(sub_mat2), np.min(sub_mat3), np.min(sub_mat4)))
-  print('mean: {}, {}, {}, {}, {}'.format(np.mean(sub_mat), np.mean(sub_mat1), np.mean(sub_mat2), np.mean(sub_mat3), np.mean(sub_mat4)))
-  print('std : {}, {}, {}, {}, {}'.format(np.std(sub_mat), np.std(sub_mat1), np.std(sub_mat2), np.std(sub_mat3), np.std(sub_mat4)))
+  print('({}, {}) - ({}, {}), size: {}'.format(left, top, right, bottom, mat.size))
+  print(mat)
 
-  return args
+  print('---statistics---')
+  matLT = mat[0::2, 0::2] # bayer left-top, attention:clip位置でbayer順が変化する
+  matRT = mat[1::2, 0::2] # bayer right-top
+  matLB = mat[0::2, 1::2] # bayer left-bottom
+  matRB = mat[1::2, 1::2] # bayer right-bottom
+  print('max : {} / {}, {}, {}, {}'.format(np.max(mat), np.max(matLT), np.max(matRT), np.max(matLB), np.max(matRB)))
+  print('min : {} / {}, {}, {}, {}'.format(np.min(mat), np.min(matLT), np.min(matRT), np.min(matLB), np.min(matRB)))
+  print('mean: {:.2f} / {:.2f}, {:.2f}, {:.2f}, {:.2f}'.format(np.mean(mat), np.mean(matLT), np.mean(matRT), np.mean(matLB), np.mean(matRB)))
+  print('std : {:.2f} / {:.2f}, {:.2f}, {:.2f}, {:.2f}'.format(np.std(mat), np.std(matLT), np.std(matRT), np.std(matLB), np.std(matRB)))
+
+  hist, bin_edge = np.histogram(mat.ravel())
+  print('hist : {} bin_edge {}'.format(hist, bin_edge))
+
+  plot(mat, matLT, matRT, matLB, matRB)
+  plt.show()
+
+  return { 'state': True }

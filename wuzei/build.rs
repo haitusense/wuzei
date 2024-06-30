@@ -2,6 +2,6 @@
 extern crate windres;
 use windres::Build;  
 
-fn main() {  
+fn main() {
   Build::new().compile("src/wuzei.rc").unwrap();  
 }

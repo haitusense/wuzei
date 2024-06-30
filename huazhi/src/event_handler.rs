@@ -94,6 +94,8 @@ fn move_pos(window: &tao::window::Window, json: &serde_json::Value) -> anyhow::R
   let y = json["y"].as_i64().expect("not found key") as i32;
   let width = json["width"].as_i64().expect("not found key") as i32;
   let height = json["height"].as_i64().expect("not found key") as i32;
+  let width = if width > 320 { width } else { 320 };
+  let height = if height > 120 { height } else { 120 };
 
   let pos = wry::dpi::PhysicalPosition::new(x, y);
   window.set_outer_position(wry::dpi::Position::Physical(pos));
@@ -176,7 +178,7 @@ where F: FnOnce(Message) -> serde_json::Value {
       let des: KeyEvent = serde_json::from_value::<KeyEvent>(e).unwrap();
       println!("{:?}", des);
       // let dst = key_event(des, term);
-      // let _ = webview.evaluate_script(&*format!("window.wterm.write('{dst}')"));
+      // let _ = webview.evaluate_script(&*format!("window.haiterm.write('{dst}')"));
     },
     Event::UserEvent(UserEvent::State(e)) => {
       /* ここでgrobalなValueの更新 */
@@ -269,8 +271,8 @@ fn _key_event(e:KeyEvent, term:&mut Terminal) -> String {
     //   let hoge = term.current_line.to_string();
     //   term.current_line = "".to_string();
     //   term.pos = 0;
-    //   // let _ = webview.evaluate_script(&*format!("window.wterm.writeln('')"));
-    //   // let _ = webview.evaluate_script(&*format!("window.wterm.send('{hoge}')"));
+    //   // let _ = webview.evaluate_script(&*format!("window.haiterm.writeln('')"));
+    //   // let _ = webview.evaluate_script(&*format!("window.haiterm.send('{hoge}')"));
     // }
     (_,_,_,_)=>{
       term.current_line.insert_str(term.pos, e.key.as_str());

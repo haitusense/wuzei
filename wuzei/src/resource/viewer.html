@@ -1,0 +1,471 @@
+<!doctype html>
+<html>
+  <head>
+    <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
+    <script src="./rxjs@7.8.1/dist/bundles/rxjs.umd.min.js"></script>
+    <script src="./@vueuse/rxjs@10.9.0/index.iife.js"></script>
+
+    <link href="./splitpanes@3.1.5/dist/splitpanes.min.css" rel="stylesheet">
+    <script src="./splitpanes@3.1.5/dist/splitpanes.umd.min.js"></script>
+
+    <link href="./@xterm/xterm@5.5.0/css/xterm.min.css" rel="stylesheet"/>
+    <script src="./@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="./@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+
+    <style>
+      html, body { height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
+      #app{ height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
+    </style>
+    <link href="./component/context.css" rel="stylesheet"/>
+  </head>
+  <body>
+    <!-------- view -------->
+    <div id ="app">
+      <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
+        <!-- canvas -->
+        <vue-pane ref="testRef" id="a" style="overflow:scroll; position:relative; background-color:gray;">
+          <canvas-ex 
+            :margin="20"
+            ref = "canvasRef"
+            :zoom="zoom" @update:zoom="$event => (zoom = $event)"
+            :select="select" @update:select="$event => (select = $event)"
+            :rendering="rendering ? 'pixelated' : 'auto'"
+            @on-context="onContextmenu"
+            @on-mousemove="onMousemove"
+            @on-wheel="onWheel"
+            @on-drop="(e)=>{ onDrop = e }"
+          ></canvas-ex>
+        </vue-pane>
+        <vue-pane style="width:100%; background-color: white;" v-if="termShow">
+          <!-- terminal -->
+          <hai-terminal ref="termRef"
+            :pty="pty"
+            :font-size="fontSize"
+            :before-on-key="(e) =>{ return true; }"
+            @on-mounted="onTermMounted"
+            @on-change="(e)=>{/*console.log(e)*/}"
+            @on-drop="(e)=>{ onDrop = e}"
+          ></hai-terminal>
+        </vue-pane>
+      </vue-split-pane>
+      <!-- context-menu / mouse-stalker -->
+      <mouse-stalker target="canvas" ref="stalkerRef" ></mouse-stalker>
+      <context-menu ref="contextRef" :items="contextList"></context-menu>
+    </div>
+    <!-------- logic -------->
+    <script type="module">
+      //@ts-check
+
+      //@ts-ignore
+      const [ wv, Vue, rxjs, VueUse ] = [ window.chrome.webview, window.Vue, window.rxjs, window.VueUse ];
+      //@ts-ignore
+      const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
+
+      import { indoc, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, setState, readFile } from "./js/lib.js"
+      import { Haiterm, WPty } from "./component/haiterm.js"
+      import { canvasEx, Rect } from "./component/canvas-ex.js"
+      import { contextmenu } from "./component/context.js"
+      import { stalker } from "./component/stalker.js"
+
+      const { createApp, ref, nextTick, onMounted, reactive } = Vue;
+      const { of, merge, partition,
+        filter, first, delay, map, takeUntil, debounceTime, scan,
+        bufferToggle, switchMap, mergeMap, flatMap, 
+        share, tap, combineLatest, zip, exhaustMap
+      } = rxjs;
+      const { from, fromEvent } = VueUse;
+
+      const pty = new WPty("wv");
+      
+      const app = createApp({
+        setup() {
+
+          const isBusy = ref(true);
+          const [termShow, termRef] = [ref(false), ref(null)];
+          const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
+          const [onDrop] = [ref(null)];
+          const [testRef] = [ref(null)];
+
+          const select = ref(Rect.new());
+          const [zoom, rendering, fontSize] = [ref(null), ref(true), ref(12)];
+          const [bitshift, color, matrix] = [ref(0), ref(0), ref( [[1,0,0],[0,1,0],[0,0,1]] )]
+          // const rawState = ref({ bitshift :0, color:0, });
+
+          const state = {
+            bitshift : { type: Number, data: bitshift },
+            color : { type: Number, data: color },
+            matrix : { type: Object, data: matrix },
+            zoom : { type: Number, data: zoom },
+            rendering : { type: Boolean, data: rendering },
+            path : { type: String, data: ref("") },
+            subpath : { type: String, data: ref("data.raw") }, // ここ数値と共存できない？
+            stalker : { type: String, data: ref("(e) => e + 0") },
+            fontSize : { type: Number, data: fontSize },
+            test : { type: Object, data: ref({a:0, b:0}) },
+            execute :  { type: Boolean, data: ref(true) },
+            prompt : { type: String, data: ref("(path) => (path ?? 'offline') + '> '") },
+          }
+
+          /******** method ********/
+          const refresh = async () => {
+            stalkerRef.value.intext('shift+0', `bitshift : ${bitshift.value}\r\ncolor : ${color.value}`)
+            const image = await asyncPostPng({ bitshift: bitshift.value, color:color.value, matrix:matrix.value })
+            canvasRef.value.draw(image);
+          }
+          const redraw = async () => {
+            await readFile(state.path.data.value, state.subpath.data.value)
+            await refresh()
+          }
+          /******** busy ********/
+          from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
+
+          /* to sk */
+          from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
+          // from(select).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
+
+          const rawState$ = merge(from(bitshift), from(color))
+          rawState$.subscribe(async e => { await refresh() })
+
+          /******** action ********/
+          pty.setCmd({
+            /* js */
+            'state' : { 'type': 'action', 'func': async (e, callback) =>{
+              for(var i in state){
+                const key = ` ${i} : ${state[i].type.name}`.padEnd(20)
+                callback(` ${key} = ${JSON.stringify(state[i].data["_value"])}\r\n`);
+              }
+            }},
+            'set' : { 'type': 'action', 'func': async (e, callback) =>{
+              try{
+                switch(state[e.payload[0]].type.name){
+                  case "Boolean":
+                  case "Object":
+                    state[e.payload[0]].data.value = JSON.parse(e.payload[1])
+                    break;
+                  default:
+                    state[e.payload[0]].data.value = state[e.payload[0]].type(e.payload[1])
+                    break;
+                }
+              }catch(e){
+                callback(`err : ${e}\r\n`);
+              }
+            }},
+            'open' : { 'type': 'action', 'func': async (e, callback) =>{
+              const opts = {
+                types: [
+                  { description: 'image', accept: { 'image/png': [".png", ".bmp"] } },
+                  { description: 'raw', accept: { 'application/x-binary': [".bin", ".zip", ".hraw"] } },
+                  { description: 'script', accept: { 'text/plain': ['.py'] } }
+                ],
+                multiple: false
+              };
+              try {
+                const files = await globalThis.showOpenFilePicker(opts);
+                for (var handle of files) {
+                  const dst = {
+                    name : handle.name,
+                    kind: handle.kind,
+                    // data : await handle.getFile(); const text = await file.getText();
+                  }
+                  callback(`state : ${JSON.stringify(dst, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+                  // -> showSaveFilePicker
+                }
+              }catch(e){
+                callback(`cancel\r\n`);
+              }
+            }},
+
+            'select' : { 'type': 'function', 'func': async (e, callback) =>{
+              select.value = Rect.set4point(
+                Number(e.payload[0]), 
+                Number(e.payload[1]),
+                Number(e.payload[2]),
+                Number(e.payload[3])
+              );
+            }},
+            'clip' : { 'type': 'function', 'func': async (e, callback) =>{
+              canvasRef.value.clip(false);
+            }},
+            'clip-selected' : { 'type': 'function', 'func': async (e, callback) =>{
+              canvasRef.value.clip(true);
+            }},
+
+            /* rust */
+            'env' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("env", undefined )
+              callback(JSON.stringify(dst,undefined,2).replace(/\n/g, '\r\n'));
+            }},
+            'cd' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("cd", e.payload[0] )
+              callback(JSON.stringify(dst));
+            }},
+            'getpixel' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
+              callback(JSON.stringify(dst));
+            }},
+            'refresh' : { 'type': 'function', 'func': async (e, callback) =>{
+              // bitshift.value = bitshift.value // オブジェクトじゃないと強制更新しない
+              // rawState.value = { ...rawState.value }
+              await refresh()
+            }},
+            'read' : { 'type': 'function', 'func': async (e, callback) =>{
+              state.path.data.value = e.payload[0];
+              await readFile(e.payload[0], state.subpath.data.value)
+              await refresh()
+            }},
+            'redraw' : { 'type': 'function', 'func': async (e, callback) =>{
+              await readFile(state.path.data.value, state.subpath.data.value)
+              await refresh()
+            }},
+
+            'py1' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("py1", e.payload.join(' ') )
+              callback(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
+            }},
+            'py-pst' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("py", { 
+                code: indoc(`
+                  def main(args):
+                    print('__name__ :', __name__)
+                    print('args :', args)
+                    print('dst :', Pixel.get(10, 10))
+                    Pixel.set(10, 10, 255)
+                    args["x"] = 10
+                    return args
+                `), 
+                entry: "main",
+                args: JSON.stringify({ x:1, y:2 }) 
+              } );
+              callback(JSON.stringify(dst));
+            }},
+
+            'py' : { 'type': 'function', 'func': async (e, callback) =>{
+              try{
+                const code = await asyncGetTxt(`local/${e.payload[0]}`)
+                callback(`========code========\r\n`);
+                callback(`${code}\r\n`);
+                callback(`========result========\r\n`);
+                const dst = await asyncPostJson("py", { 
+                  code: code,
+                  entry: "main",
+                  args: JSON.stringify(JSON.parse(e.payload[1] ?? "{}"))
+                } );
+                // '["a"]'
+                // args : (() => { try { return JSON.parse(e.payload[1] ?? "{}") } catch { return e.payload })();
+                callback(`${JSON.stringify(dst)}`);
+              }catch(e){
+                callback(`err : ${e}`);
+              }
+
+            }},
+            'ps' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("ps", e.payload);
+              callback(JSON.stringify(dst));
+            }},
+
+          });
+
+          /******** terminal ********/
+          // const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+          const customPrompt = async () => pty.prompt(await (async () =>{
+            const code = String(state.prompt.data.value);
+            const path = (await asyncPostJson("env", undefined))?.payload.current_dir ?? undefined;
+            return (new Function('src', `return (${code})(src)`))(path);
+          })());
+          const onTermMounted = async (e) => {
+            console.log('onTermMounted')
+            await customPrompt();
+          }
+          pty.onSubmit(async (e)=> {
+            console.log("submit", e)
+            isBusy.value = true;
+            await pty.asyncCmd(e);
+            await customPrompt();
+            isBusy.value = false;
+          });
+          
+          /******** key event / shortcut ********/
+          fromEvent(document, 'keydown').pipe(
+            filter( n => n.repeat === false ), 
+            filter(n => n.key.startsWith('Arrow')
+              || n.key.startsWith('F')
+              || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
+            )
+          ).subscribe( async e => {
+            // console.log(e)
+            const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
+            switch(keys){
+              /* break -> e.preventDefault() */
+              case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; } break;
+
+              case 'shift+ArrowUp': { bitshift.value += 1; } break;
+              case 'shift+ArrowDown': { bitshift.value -= 1; } break;
+              case 'shift+ArrowRight': { color.value += 1 } break;
+              case 'shift+ArrowLeft': { color.value -= 1 } break;
+
+              case 'shift+ctrl+Semicolon': { zoom.value += 1; } break;
+              case 'shift+ctrl+Minus': { zoom.value -= 1; } break;
+              case 'shift+ctrl+ArrowUp': { zoom.value += 1; } break;
+              case 'shift+ctrl+ArrowDown': { zoom.value -= 1; } break;
+
+              case 'shift+ctrl+Digit0': { state.subpath.data.value = "0"; await redraw(); } break;
+              case 'shift+ctrl+Digit1': { state.subpath.data.value = "1"; await redraw(); } break;
+              case 'shift+ctrl+Digit2': { state.subpath.data.value = "2"; await redraw(); } break;
+              case 'shift+ctrl+Digit3': { state.subpath.data.value = "3"; await redraw(); } break;
+              case 'shift+ctrl+Digit4': { state.subpath.data.value = "4"; await redraw(); } break;
+              case 'shift+ctrl+Digit5': { state.subpath.data.value = "5"; await redraw(); } break;
+              case 'shift+ctrl+Digit6': { state.subpath.data.value = "6"; await redraw(); } break;
+              case 'shift+ctrl+Digit7': { state.subpath.data.value = "7"; await redraw(); } break;
+              case 'shift+ctrl+Digit8': { state.subpath.data.value = "8"; await redraw(); } break;
+              case 'shift+ctrl+Digit9': { state.subpath.data.value = "9"; await redraw(); } break;
+
+              case 'F1': { rendering.value = !rendering.value } break;
+              case "F2": { pty.input("refresh", 'execute'); } break;
+
+              /* return -> bubbling */
+              default: {} return;
+            }
+            e.preventDefault();
+          });
+
+          /******** mouse event without canvas ********/
+
+          /******** mouse event in canvas ********/
+          const onMousemove = async (e, real, debounce)=> {
+            if(debounce) {
+              const dst = await asyncPostPixel({ x: real.x, y:real.y });
+              const code = String(state.stalker.data.value); //"(e) => e + 3"
+              const t = (new Function('src', `return (${code})(src)`))(dst.data);
+              
+              const toHex = (n) => '0x' + (('00000000' + (n >>> 0).toString(16).toUpperCase()).substr(-8));
+              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${t}\r\n${toHex(dst.data)}`)
+            } else {
+              stalkerRef.value.intext('0', `${real.x} ${real.y}`)
+            }
+            e.preventDefault()
+          }
+
+          const onWheel = async (e) =>{ 
+            const dst = e.deltaY > 0 ? -1 : 1
+            bitshift.value = bitshift.value + dst
+          }
+
+          /******** contextmenu ********/
+          const onContextmenu = (e, n) => {
+            if(n.inSelected){
+              contextRef.value.show(e.clientX, e.clientY, 'IN')
+            }else{
+              contextRef.value.show(e.clientX, e.clientY, 'OUT')
+            }
+            e.preventDefault();
+          }
+          const contextList = reactive({
+            "IN" : [
+              { type : 'div', value: 'Clip Image', action: (e)=>{ pty.input("clip-selected", 'execute') } },
+              { type : 'div', value: 'Clip Coord', action: (e)=>{ navigator.clipboard.writeText(select.value.to_json()); } },
+              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ pty.input(` '${select.value.to_json()}'`, 'append'); } },
+              { type : 'hr' },
+              { type : 'div', value: 'execute clip_csv.py', action: (e)=>{ 
+                pty.input(`py scripts/clip_csv.py '${JSON.stringify(select.value.get())}'`, 'execute') 
+              } },
+              { type : 'div', value: 'execute clip_csv.py png', action: (e)=>{ 
+                const args = { ...select.value.get(), bayer : -2 }
+                pty.input(`py scripts/clip_csv.py '${JSON.stringify(args)}'`, 'execute')
+              } },
+              { type : 'hr' },
+              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ pty.input(`py scripts/script.py '${select.value.to_json()}'`, 'append') } },
+              { type : 'div', value: 'execute draw.py', action: (e)=>{ 
+                pty.input(`py scripts/draw.py '${JSON.stringify(select.value.get())}'`, 'execute')
+                pty.input("refresh", 'execute');
+              } },
+            ],
+            "OUT" : [
+              { type : 'div', value: 'Copy Full', action: (e)=>{ pty.input("clip", 'execute') } },
+              { type : 'hr' },
+              { type : 'div', value: 'open File Dialog', action: (e)=>{ pty.input("open", 'execute') } },
+              { type : 'div', value: 'Show/Hide Term', action: (e)=>{ termShow.value = !termShow.value; } },
+            ]
+          });
+
+
+          /******** dorp event ********/
+          ( wv 
+            ? zip(from(onDrop), fromEvent(wv, 'newWindowReq'))
+            : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
+          ).subscribe( async ([e1, e2]) => {
+            const execute = state.execute.data.value ? 'execute' : 'overwrite';
+            switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
+              case 'canvas:drop_string'  : { pty.input(`read ${JSON.stringify(e1.detail)}`, 'overwrite') } break;
+              case 'canvas:drop_file'    : { 
+                const path = e1.detail
+                if(path.match('.(py|txt)$')){
+                  pty.input(`py ${JSON.stringify(path)}`, 'overwrite') 
+                }else{
+                  pty.input(`read ${JSON.stringify(path)}`, 'overwrite')
+                }
+              } break;
+              case 'canvas:req_http'     : { pty.input(`read ${JSON.stringify(e2.detail?.payload)}`, execute) } break;
+              case 'canvas:req_file'     : { 
+                const path = e2.detail?.payload
+                if(path.match('.(py|txt)$')){
+                  pty.input(`py ${JSON.stringify(path)}`, execute) 
+                }else{
+                  pty.input(`read ${JSON.stringify(path)}`, execute)
+                }
+              } break;
+
+              case 'terminal:drop_string': { pty.input(JSON.stringify(e1.detail)); } break;
+              case 'terminal:drop_file'  : { pty.input(JSON.stringify(e1.detail)); } break;
+              case 'terminal:req_http'   : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+              case 'terminal:req_file'   : { pty.input(JSON.stringify(e2.detail?.payload)); } break;
+
+              default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
+            }
+          });
+ 
+
+          /******** other event ********/
+          if(wv){
+
+            fromEvent(wv, 'write').subscribe((e) => { pty.log(`${e.detail}`); });
+            fromEvent(wv, 'prompt').subscribe(async () => { await customPrompt(); });
+
+            const updated$ = fromEvent(wv, 'updated');
+            updated$.subscribe(async (e) => { console.log('updated', e); });
+
+            const namedPipe$ = fromEvent(wv, 'namedPipe');
+            namedPipe$.subscribe(e => { console.log("namedPipe", e) });
+
+          }
+          
+          /******** onMounted ********/
+          onMounted(async () => {
+            console.log('app mounted')
+            termShow.value = true;
+            zoom.value = 0;
+            await refresh()
+            isBusy.value = false;
+            nextTick(() => { console.log('app rendered'); });
+          });
+          return {
+            isBusy,
+            termShow, contextList, 
+            onMousemove, onContextmenu, onDrop, onWheel,
+            canvasRef, contextRef, stalkerRef,
+            termRef, onTermMounted, pty,
+            zoom, select, rendering,
+            testRef, fontSize
+          }
+        }
+      });
+
+      app.component('vue-pane', Pane);
+      app.component('vue-split-pane', Splitpanes);
+      app.component('context-menu', contextmenu);
+      app.component('mouse-stalker', stalker);
+      app.component('canvas-ex', canvasEx);
+      app.component('hai-terminal', Haiterm);
+      app.mount('#app');
+    </script>
+  </body>
+</html>

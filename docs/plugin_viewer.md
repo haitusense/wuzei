@@ -10,6 +10,9 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     - Negative signal (e.g. Useing DCDS)
     - Linear display
     - image scaled with nearest-neighbor rendering
+  - Strictness of Bit Operation
+    - Check for flag bit  
+    - Check for errors in IO / digital logic / ADC
   - Special Struct
     - color filter array (e.g. RGBW)
     - read order (e.g. Using Pixel sharing)
@@ -19,6 +22,7 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     - search
     - statistical analysis
     - other ( linearity, color evaluation)
+  - Terminal operation
 - hidden topic
   - logic replaced by Rust
   - Using web technologies for presentation layer
@@ -26,19 +30,9 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 
 ## Usage
 
-### Terminal keyboard shortcuts / mouse event
-
-| function                               | mouse       | shotcut-key     |
-| :--                                    | :--:        | :--:            |
-| select text                            | left + move |                 |
-| paste                                  | center      | ctrl + v        |
-| copy                                   |             | ctrl + c        |
-| clear                                  |             | ctrl + l        |
-| home                                   |             | home / ctrl + ← |
-| end                                    |             | end  / ctrl + → |
-| clear                                  |             | ctrl + l        |
-| context menu (browser default)         | right       |                 |
-| Cycle through previously used commands |             | ↑ / ↓           |
+```powershell
+ps> wuzei.exe -s resource:viewer.html
+```
 
 ### Canvas default key assignment
 
@@ -48,27 +42,34 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 | **read file**                     | drag and drop [*]        |                        | ```read [path]``` |
 | **select**                        | left + move [*]          |                        | ```select [left] [top] [right] [bottom]``` |
 | **context menu**                  | right [*]                |                        | |
-| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```bitshift [num]``` |
+| **bitshift**                      | shift + wheel            | shift + ↑/↓            | ```set bitshift [num]``` |
 | **zoom up/down** (browser)        | ctrl + wheel             | ctrl + '+'/'-'         | |
 | **zoom reset** (browser)          |                          | ctrl + 0               | |
-| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```zoom [level]``` |
+| **zoom up/down** (canvas)         | shift + ctrl + wheel [*] | shift + ctrl + '+'/'-' | ```set zoom [level]``` |
 |                                   |                          | shift + ctrl + ↑/↓     | |
-| **mono/color**                    |                          | shift + ←/→            | ```color [num]``` |
-| **rendering**                     |                          | '\\'                   | |
+| **mono/color**                    |                          | shift + ←/→            | ```set color [num]``` |
+| **rendering**                     |                          | F1                     | |
 | echo                              |                          |                        | ```echo [args]``` |
 | get current_dir                   |                          |                        | ```env``` |
 | set current_dir                   |                          |                        | ```cd [path]``` |
 | show state                        |                          |                        | ```state``` |
 | set state                         |                          |                        | ```set [key] [value]``` |
-| refresh                           |                          |                        | ```refresh``` |
+| refresh display                   |                          | F2                     | ```refresh``` |
+| reload (browser)                  |                          | F5                     | |
+| redraw form file                  |                          |                        | ```redraw``` |
 | getpixel                          |                          |                        | ```getpixel [x] [y]``` |
 | scripting (js eval)               |                          |                        | ```js1 [command]``` |
 | scripting (py eval)               |                          |                        | ```py1 [command]``` |
 | scripting (py preset)             |                          |                        | ```py-pst``` |
 | scripting (py from file)          |                          |                        | ```py [path] [args]``` |
-| scripting (ps)                    |                          |                        | ```ps``` |
+| scripting (ps)                    |                          |                        | ```ps [args]``` |
 
 [*] : event in canvas
+
+- drop event
+  - drop image file in canvas : overwite ```read``` command and execute
+  - drop py file in canvas : overwite ```py``` command
+  - drop in terminal : insert filepath
 
 **color**
 
@@ -95,18 +96,45 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
     R G B A
 ```
 
+customize the display from the terminal
+
+```powershell
+terminal> state
+# ...
+# otherState : {
+#   ...
+#   "stalker": "(e) => e + 0"
+# }
+
+terminal> set stalker "(e) => e / 100"
+terminal> state
+# ...
+# otherState : {
+#   ...
+#   "stalker": "(e) => e / 100"
+# }
+
+# src = 1234567
+#   "(e) => e / 100"                             -> 12345.67
+#   "(e) => e.toLocaleString('en-IN')"           -> 1,234,567
+#   "(e) => '0x' + e.toString(16).toUpperCase()" -> 0x12D687
+#   "(e) => (0 & 0b1111)"                        -> 7
+```
+
 #### disable
 
-- send from namedpipe or prompt-dialog
-
-| function           | mouse                | shotcut-key     | terminal command |
-| :--                | :--:                 | :--:            | :--              |
-| prompt-dialog      | center (deep click)  |                 |                  |
-| alert              |                      |                 | alert [message]  |
+- send from namedpipe
 
 ### Scripting
 
 #### by Python
+
+numpy 2.0 is not supported  
+use numpy <= 1.26.0
+
+```ps
+PS> pip install numpy==1.26.0
+```
 
 **detail**
 
@@ -118,11 +146,38 @@ This software is intended for Show True RAW Data, Evaluation of Image quality an
 - Returns : dictionary object (Serialize to Json in rust)
 
 ```python
-def main(args):
-  Px = Pixel #type: ignore
-  print('args :', args)
-  print('dst :', Px.get(10, 10))
+import numpy as np                  # import library
+
+def main(args):                     # entry point
+  print('args :', args)             # {} when args is empty 
+  Px = Pixel #type: ignore          # call struct in rust
+  pixel = Px.get(10, 10)            # set / get pixel data (i32)
   Px.set(10, 10, 255)
-  args["x"] = 10
-  return args
+  df = Px.to_np()                   # convert to np.ndarray
+  Px.from_np(df)                    # convert from np.ndarray
+  return { 'detail' : 'successed' } # return dictionary object
+```
+
+**numpy2**
+
+- dtype (StringDType)
+- Windows のデフォルト整数型が他のプラットフォームと同様に `int32` から `int64` に変更。
+- ndarray.array の copy キーワードの動作が変更
+  - np.array(..., copy=False)  -> np.array(..., copy=False) 
+
+np.array -> np.asarray 推奨
+
+copy=True   : および任意の dtype 値: 常に新しいコピーを返す。
+copy=None   : 必要に応じてコピーを作成する
+copy=False  : コピーを作成しない
+
+
+ruff>=0.2.0
+pyproject.toml
+```
+[tool.ruff.lint]
+select = ["NPY201"]
+```
+```
+$ ruff check path/to/code/ --select NPY201
 ```

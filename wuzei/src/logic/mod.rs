@@ -1,5 +1,6 @@
 pub mod custom_protocol;
 pub mod event_handler;
+use colored::*;
 
 // #![feature(async_closure)]
 use std::sync::Mutex;
@@ -8,7 +9,7 @@ use huazhi::memorymappedfile::*;
 static MMF: std::sync::OnceLock<std::sync::Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator>> = std::sync::OnceLock::new();
 fn get_mmf() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator> {
   MMF.get_or_init(|| {
-    let path = crate::get_args().lock().unwrap().memorymapped.clone();
+    let path = crate::get_args().lock().unwrap().memorymapped.clone().unwrap();
     let value = serde_json::json!({
       "path" : path,
       "size" : 320 * 240 * 4,
@@ -21,6 +22,7 @@ fn get_mmf() -> &'static Mutex<huazhi::memorymappedfile::MemoryMappedFileCreator
 }
 
 pub fn mmf_init(width:usize, height:usize){
+  println!("{}", "init mmf".blue());
   // let json = json!({ "width" : width, "height": height });
   // let mut json_str = serde_json::to_string(&json).unwrap();
   // json_str.push('\0');

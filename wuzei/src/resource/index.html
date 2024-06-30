@@ -2,6 +2,7 @@
 <html>
   <head>
     <!-- https://cdn.jsdelivr.net/npm -->
+    <!-- http://wuzei.localhost/resource/ -->
     <script src="./vue@3.4.26/dist/vue.global.min.js"></script>
     <script src="./rxjs@7.8.1/dist/bundles/rxjs.umd.min.js"></script>
     <script src="./@vueuse/rxjs@10.9.0/index.iife.js"></script>
@@ -17,389 +18,234 @@
       html, body { height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
       #app{ height: 100%; box-sizing: border-box;  margin: 0; padding: 0; }
     </style>
-    <link href="./component/context.css" rel="stylesheet"/>
   </head>
   <body>
     <!-------- view -------->
     <div id ="app">
       <vue-split-pane horizontal class="default-theme" style="width:100%; height:100%;" >
-        <!-- canvas -->
-        <vue-pane ref="testRef" style="overflow:scroll; position: relative; background-color: gray;">
-          <canvas-ex 
-            :margin="20"
-            ref = "canvasRef"
-            :zoom="zoom" @update:zoom="$event => (zoom = $event)"
-            :select="selected" @update:select="$event => (selected = $event)"
-            :rendering="rendering ? 'pixelated' : 'auto'"
-            @on-drop="onDrop"
-            @on-context="onContextmenu"
-            @on-mousemove="onMousemove"
-            @on-wheel="onWheel"
-          ></canvas-ex>
+        <vue-pane style="overflow:scroll; position: relative;">
+          <div>test</div>
+          <div contenteditable virtualkeyboardpolicy="manual" id="editor"></div>
+          <button id="edit-button">Edit</button>
         </vue-pane>
         <vue-pane style="width:100%; background-color: white;" v-if="termShow">
           <!-- terminal -->
-          <my-terminal ref="termRef"
-            :before-on-key="beforeOnKey"
+          <hai-terminal ref="termRef" 
+            :pty="pty"
+            :before-on-key="(e) =>{ return true; }"
+            :font-size="fontSize"
             @on-mounted="onTermMounted"
-            @on-change="onChange"
-            @on-submit="onSubmit"
-          ></terminal>
+            @on-change="(e)=>{/*console.log(e)*/}"
+            @on-drop="(e)=>{ onDrop = e}"
+          ></hai-terminal>
         </vue-pane>
       </vue-split-pane>
-      <!-- context-menu / mouse-stalker -->
-      <mouse-stalker target="canvas" ref="stalkerRef" ></mouse-stalker>
-      <context-menu ref="contextRef" :items="contextList"></context-menu>
     </div>
     <!-------- logic -------->
     <script type="module">
-      import { 
-        sleep, indoc,
-        asyncCheckWebview, post, asyncGetTxt, asyncPostJson, asyncPostPng, asyncPostPixel, 
-        setState,
-        readFile
-      } from "./js/lib.js"
+      //@ts-check
 
-      // await asyncCheckWebview();// undefined
-      // setState({ a: "hoge" });
-      // console.log(window.dummyState)
+      //@ts-ignore
+      const [ wv, Vue, rxjs, VueUse ] = [ window.chrome.webview, window.Vue, window.rxjs, window.VueUse ];
+      //@ts-ignore
+      const [ Pane, Splitpanes ] = [ window.splitpanes.Pane, window.splitpanes.Splitpanes ];
 
-      import { wtermComponent, Wterm } from "./component/wterm.js"
-      import { canvasEx } from "./component/canvas-ex.js"
-      import { contextmenu } from "./component/context.js"
-      import { stalker } from "./component/stalker.js"
-
-      const { createApp, ref, nextTick, onMounted, reactive } = window.Vue;
+      import { post, asyncGetTxt, asyncPostJson, readFile } from "./js/lib.js"
+      import { Haiterm, WPty } from "./component/haiterm.js"
+      const { createApp, ref, nextTick, onMounted, reactive } = Vue;
       const { /* from */ /* fromEvent */ of, merge, partition,
         filter, first, delay, map, takeUntil, debounceTime, scan,
         bufferToggle, switchMap, mergeMap,  
-        share, tap
-      } = window.rxjs;
-      const { from, fromEvent } = window.VueUse;
+        share, tap, zip
+      } = rxjs;
+      const { from, fromEvent } = VueUse;
+
+      const pty = new WPty("wv");
 
       const app = createApp({
         setup() {
-          const [termShow, termRef] = [ref(false), ref(null)];
-          const [canvasRef, contextRef, stalkerRef] = [ref(null), ref(null), ref(null)];
-          const [testRef] = [ref(null)];
+          const isBusy = ref(true);
+          const [termShow, termRef, onDrop] = [ref(false), ref(null), ref(false)];
 
-          const rawState = ref({ 
-            bitshift :0, 
-            color:0,
-            LUT: "",
-            offset: ""
-          });
-          const otherState = ref({
-            path : "", 
-            subpath: "data.raw",
-          });
-          const [zoom, selected, rendering] = [ref(null), ref(null), ref(true)];
-
-          /* to sk */
-          from(zoom).subscribe(e => stalkerRef.value.intext('shift+ctrl+0', `zoom : ${Number(e)}`) )
-          from(selected).subscribe(e => stalkerRef.value.intext('1', `(${e.left},${e.top})-(${e.right},${e.bottom})`) )
-
-          from(rawState).subscribe(async e => {
-            stalkerRef.value.intext('shift+0', `bitshift : ${e.bitshift}\r\ncolor : ${e.color}`)
-            const image = await asyncPostPng(e)
-            canvasRef.value.redraw(image);
-          })
-
-          /******** method ********/
-          const _readfile = async (path) => {
-            otherState.value.path = path;
-            await readFile(path, otherState.value.subpath)
-            rawState.value = { ...rawState.value }
-            // const image = await asyncPostPng(rawState.value)
-            // canvasRef.value.redraw(image);
-            // window.wterm.inputln(`echo ${e.detail.payload}`);
-          };
-
-          /******** terminal ********/
-          const onTermMounted = async (e) => { /* 自分でprompt必要 */
-            console.log('onTermMounted')
-            const dst = await asyncPostJson("env", undefined )
-            termRef.value.prompt(`${ dst ? dst.payload.current_dir : ""}> `);
+          const fontSize = ref(12)
+          const state = {
+            path : { type: String, data: ref(null) },
+            fontSize : { type: Number, data: fontSize },
           }
-          const beforeOnKey = (e) => { return true; }
-          const onChange = (e)=> { /* console.log(e) */ }
-          const onSubmit = async (e) => { /* 自分でprompt必要 */
-            console.log(e)
-            switch(e.type){
-              case 'echo':{ termRef.value.write(`${e.payload.join(' ')}`); } break;
-              case 'env':{
-                const dst = await asyncPostJson("env", undefined )
-                termRef.value.write(JSON.stringify(dst));
-              } break;
-              case 'cd':{
-                const dst = await asyncPostJson("cd", e.payload[0] )
-                termRef.value.write(JSON.stringify(dst));
-              } break;
-              case 'getpixel':{
-                const dst = await asyncPostPixel({x: Number(e.payload[0]), y:Number(e.payload[1])});
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'refresh':{
-                rawState.value = { ...rawState.value }
-              } break;
-              
-              case 'sleep-js':{
-                for (let step = 0; step < 5; step++) {
-                  if(termRef.value){
-                    termRef.value.write(`${step}`);
-                  }else{
-                    console.log(step)
-                  }
-                  await sleep(1000);
-                }
-              } break;
-              case 'sleep-event':{
-                post("sleep", { a : 1, b :2 });
-              } return; // callbackで受けるのでtermRef.value.prompt()を投げない
-              case 'sleep-async':{
-                const dst = await asyncPostJson("sleep", ["1"] )
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'test':{
-                post("unknown", { a : 1, b : 2 });
-              } return; // termRef.value.prompt();を投げない
-              
-              case 'js1':{
-                let dst = eval(e.payload.join(' '))
-                if(termRef.value){
-                  termRef.value.write(`${e.payload.join(' ')} = ${dst}`);
-                }else{
-                  console.log(dst)
-                } 
-              } break;
-              case 'py1':{
-                const dst = await asyncPostJson("py1", e.payload.join(' ') )
-                termRef.value.write(`${e.payload.join(' ')} = ${JSON.stringify(dst)}`);
-              } break;
-              case 'py-pst':{
-                const dst = await asyncPostJson("py", { 
-                  code: indoc(`
-                    def main(args):
-                      print('__name__ :', __name__)
-                      print('args :', args)
-                      print('dst :', Pixel.get(10, 10))
-                      Pixel.set(10, 10, 255)
-                      args["x"] = 10
-                      return args
-                  `), 
-                  entry: "main",
-                  args: JSON.stringify({ x:1, y:2 }) 
-                } );
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
 
-              case 'py':{
-                const code = await asyncGetTxt(`local/${e.payload[0]}`)
-                termRef.value.write(`========code========\r\n`);
-                termRef.value.write(`${code}\r\n`);
-                termRef.value.write(`========result========\r\n`);
-                const dst = await asyncPostJson("py", { 
+          /******** busy ********/
+          from(isBusy).subscribe(e => { document.body.style.cursor = e ? 'wait' : 'auto'; })
+
+          /******** event test ********/
+          // fromEvent(document, 'action').subscribe(async e=>{ console.log("action event", e) });
+
+          /******** action ********/
+          pty.setCmd({
+            /* js */
+            'echo' : { 'type': 'action', 'func': async (e, callback) =>{
+              callback(`echo overwrite: ${e.payload.join(' ')}`);
+            }},
+
+            'state' : { 'type': 'action', 'func': async (e, callback) =>{
+              // callback(`state : ${JSON.stringify(state, undefined, 2).replace(/\n/g, '\r\n')}\r\n`);
+              for(var key in state){
+                callback(` ${key} = ${state[key].data["_value"]}: ${state[key].type.name}\r\n`);
+              }
+            }},
+            'set' : { 'type': 'action', 'func': async (e, callback) =>{
+              // state.value = { ...state.value, [e.payload[0]] : e.payload[1] }
+              try{
+                switch(state[e.payload[0]].type.name){
+                  case "Boolean":
+                  case "Object":
+                    state[e.payload[0]].data.value = JSON.parse(e.payload[1])
+                    break;
+                  default:
+                    state[e.payload[0]].data.value = state[e.payload[0]].type(e.payload[1])
+                    break;
+                }
+              }catch(e){
+                callback(`err : ${e}\r\n`);
+              }
+            }},
+
+            /* rust */
+            'env' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("env", undefined )
+              callback(JSON.stringify(dst,undefined,2).replace(/\n/g, '\r\n'));
+            }},
+            'cd' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("cd", e.payload[0] )
+              callback(JSON.stringify(dst));
+            }},
+            'ps' : { 'type': 'function', 'func': async (e, callback) =>{
+              const dst = await asyncPostJson("ps", e.payload);
+              callback(JSON.stringify(dst));
+            }},
+            'sleep-event' : { 'type': 'function', 'func': async (e, callback) =>{
+              post("sleep", { a : 1, b :2 });
+              // callbackで受けるのでtermRef.value.prompt()を投げない
+              // event -> prompt
+            }}, 
+            'sleep-async' : { 'type': 'function', 'func': async (e, callback) => {
+              const dst = await asyncPostJson("sleep", ["1"] )
+              callback(JSON.stringify(dst));
+            }},
+
+            'selenium' : { 'type': 'script', 'func': async (e, callback) =>{
+                const code = await asyncGetTxt(`local/scripts/selenium.py`)
+                callback(`\x1b[32m`);
+                callback(`\x1b[32m========code========\r\n`);
+                callback(`${code}\r\n`);
+                callback(`\x1b[39m`);
+                callback(`========result========\r\n`);
+                const dst = await asyncPostJson("py", {
                   code: code,
                   entry: "main",
-                  args: JSON.stringify(JSON.parse(e.payload[1]))
+                  args: JSON.stringify({ url : e.payload[0] })
                 } );
-                termRef.value.write(`${JSON.stringify(dst)}`);
-              } break;
-              case 'ps':{
-                const dst = await asyncPostJson("ps", e.payload);
-                termRef.value.write(JSON.stringify(dst));
-              } break;
+                callback(JSON.stringify(dst));
+              }},
+          });
 
-              case 'state':{
-                termRef.value.write(`rawState : ${JSON.stringify(rawState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
-                termRef.value.write(`otherState : ${JSON.stringify(otherState.value, undefined, 2).replaceAll('\n', '\r\n')}\r\n`);
-              } break;
-              case 'set':{
-                otherState.value = { ...otherState.value, [e.payload[0]] : e.payload[1] }
-              } break;
-
-              case 'select':{ selected.value = {
-                left: Number(e.payload[0]), 
-                top: Number(e.payload[1]),
-                right: Number(e.payload[2]),
-                bottom:Number(e.payload[3])
-              } } break;
-              case 'zoom':{ zoom.value = Number(e.payload[0]) } break;
-              case 'bitshift':{ rawState.value = {...rawState.value, bitshift: Number(e.payload[0])} } break;
-              case 'color':{ rawState.value = {...rawState.value, color: Number(e.payload[0])} } break;
-
-              case 'read': { await _readfile(e.payload[0]); } break;
-              default:
-                // termRef.value.write(`zoom : ${e.payload}`);
-                // canvasRef.value.zoom(e.payload)
-                break;
-            }
-            const dst = await asyncPostJson("env", undefined )
-            termRef.value.prompt(`${ dst ? dst.payload.current_dir : "" }> `);
+          /******** terminal ********/
+          const customPrompt = async () => pty.prompt(((await asyncPostJson("env", undefined))?.payload.current_dir ?? "offline") + "> ");
+          const onTermMounted = async (e) => {
+            console.log('onTermMounted');
+            await customPrompt(); /* 自分でprompt必要 */
           }
-          
-          if(window.chrome.webview){
-            const termwrite$ = fromEvent(window.chrome.webview, 'write');
-            termwrite$.subscribe((e) => { termRef.value.write(`${e.detail}`); });
-            const termprompt$ = fromEvent(window.chrome.webview, 'prompt');
-            termprompt$.subscribe(() => { termRef.value.prompt(); });
-          }
-
-          /******** view ********/
-          // const isBusy$ = from(busy);
-          // isBusy$.subscribe(e =>{ document.body.style.cursor = e ? 'wait' : 'auto'; })
+          pty.onSubmit(async (e)=> {
+            console.log("submit", e)
+            isBusy.value = true;
+            await pty.asyncCmd(e);
+            await customPrompt(); /* 自分でprompt必要 */
+            isBusy.value = false;
+          });
+          /*
+            const onSubmit = async (e) => { }
+            だとtermがないときにコマンドの行き先がなくなる
+            termRef.valueで分岐させるのも煩雑だしlogが残らなくなるのでいまいち
+          */
 
           /******** key event / shortcut ********/
-
-          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
           // filter(n => n.code.startsWith('Key') && (n.altKey || n.ctrlKey || n.shiftKey) )
+          const keydown$ = fromEvent(document, 'keydown').pipe(filter( n => n.repeat === false ));
           keydown$.pipe(filter(n => 
-            n.key.startsWith('Arrow')
-            || ['\\', '.'].includes(n.key)
+            n.key.startsWith('Arrow') || ['\\', '.'].includes(n.key)
             || (!["Shift", "Control", "Alt"].includes(n.key) && (n.altKey || n.ctrlKey || n.shiftKey))
           )).subscribe( async e => {
             const keys = `${e.shiftKey ? 'shift+' : ''}${e.ctrlKey? 'ctrl+' : ''}${e.altKey? 'alt+' : ''}${e.code}`;
-            console.log(keys)
             switch(keys){
-              case 'shift+ArrowUp': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowDown': { rawState.value = { ...rawState.value , bitshift: rawState.value.bitshift - 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowRight': { rawState.value = { ...rawState.value , color: rawState.value.color + 1 }; e.preventDefault(); } break;
-              case 'shift+ArrowLeft': { rawState.value = { ...rawState.value , color: rawState.value.color - 1 }; e.preventDefault(); } break;
-
-              case 'shift+ctrl+Semicolon': { zoom.value = zoom.value+1; e.preventDefault(); } break;
-              case 'shift+ctrl+Minus': { zoom.value = zoom.value-1; e.preventDefault(); } break;
-              case 'shift+ctrl+ArrowUp': { zoom.value = zoom.value+1; e.preventDefault(); } break;
-              case 'shift+ctrl+ArrowDown': { zoom.value = zoom.value-1; e.preventDefault(); } break;
-
-              case 'IntlRo': { rendering.value = !rendering.value } break;
-
               case "shift+ctrl+BracketLeft": { termShow.value = !termShow.value; }break;
+              case "shift+ctrl+KeyZ": { pty.input("welcome", 'execute'); } break;
+              case "shift+ctrl+KeyA": { pty.log("testwrite\r\n"); } break;
+              case "shift+ctrl+KeyX": { pty.hideprompt(); } break;
+              case "shift+ctrl+KeyC": { pty.showprompt(); } break;
 
-              // コマンド送信テスト
-              case "alt+KeyZ": { termRef.value.input_insert("___") } break;
-              case "alt+KeyX": { termRef.value.input_append("___") } break;
-              case "alt+KeyC": { 
-                if(termRef.value){
-                  termRef.value.input_overwrite("sleep") /* 隠してるときはコマンド何処から送るの？ */
-                }else{
-                  await onSubmit({ type: "sleep" })
-                }
-              } break;
-              // ログテスト
-              case "alt+KeyV":
-                console.log(termRef.value)
-                if(termRef.value){
-                  termRef.value.log("logout")
-                }else{
-                  await onSubmit({ type: "sleep" })
-                }
-              default: {} break;
-            }
-          });
-
-          /******** mouse event without canvas ********/
-
-          /******** mouse event in canvas ********/
-          const onMousemove = async (e, real, debounce)=> {
-            if(debounce) {
-              const dst = await asyncPostPixel({ x: real.x, y:real.y });
-              const toHex = (n) => '0x' + (('00000000' + (n >>> 0).toString(16).toUpperCase()).substr(-8));
-              stalkerRef.value.intext('0', `${real.x} ${real.y}\r\n${dst.data}\r\n${toHex(dst.data)}`)
-            } else {
-              stalkerRef.value.intext('0', `${real.x} ${real.y}`)
-            }
-            // termRef.value.log(`${real.x} ${real.y} : ${JSON.stringify(dst)}`)
-            e.preventDefault()
-          }
-
-          const onDrop = async (e)=> {
-            console.log('newWindowReq', e);
-            switch(e.detail.type){
-              case 'file': { await _readfile(e.detail.payload); } break;
-              case 'http': { } break;
-              default: break;
-            }
-          }
-
-          const onWheel = async (e) =>{ 
-            const dst = e.deltaY > 0 ? -1 : 1
-            rawState.value = {...rawState.value, bitshift : rawState.value.bitshift + dst } 
-          }
-
-          /******** contextmenu ********/
-          const onContextmenu = (e, n) => {
-            if(n.inSelected){
-              contextRef.value.show(e.clientX, e.clientY, 'IN')
-            }else{
-              contextRef.value.show(e.clientX, e.clientY, 'OUT')
+              default: {} return;
             }
             e.preventDefault();
-          }
-          const contextList = reactive({
-            "IN" : [
-              { type : 'div', value: 'Clip Selected Image', action: (e)=>{ canvasRef.value.clip(true); } },
-              { type : 'div', value: 'Clip Selected Coord', action: (e)=>{ navigator.clipboard.writeText(JSON.stringify(selected.value)); } },
-              { type : 'div', value: 'Append Coord to Terminal', action: (e)=>{ termRef.value.input_append(`'${JSON.stringify(selected.value)}'`)  } },
-              { type : 'div', value: 'Insert Coord to Terminal', action: (e)=>{ termRef.value.input_insert(`'${JSON.stringify(selected.value)}'`) } },
-              { type : 'div', value: 'Append command to Terminal', action: (e)=>{ termRef.value.input_insert(`py scripts/script.py '${JSON.stringify(selected.value)}'`) } },
-              { type : 'hr' },
-              { type : 'div', value: 'Send clip.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/clip.py '${JSON.stringify(selected.value)}'`) 
-              } },
-              { type : 'div', value: 'Send clip_png.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/clip_png.py '${JSON.stringify(selected.value)}'`) 
-              } },
-              { type : 'div', value: 'Send stat.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/stat.py '${JSON.stringify(selected.value)}'`) 
-              } },
-              { type : 'div', value: 'Send hist.py To Terminal', action: (e)=>{ 
-                termRef.value.input_overwrite(`py scripts/hist.py '${JSON.stringify(selected.value)}'`) 
-              } },
-            ],
-            "OUT" : [
-              { type : 'div', value: 'Copy Full', action: (e)=>{ canvasRef.value.clip(false); } },
-              { type : 'div', value: 'Dummy', action: (e)=>{ console.log('Dummy', e) } },
-            ]
+          });
+
+          /******** drag and dorp ********/
+
+          ( wv 
+            ? zip(from(onDrop), fromEvent(wv, 'newWindowReq'))
+            : zip(from(onDrop), fromEvent(document, 'drop').pipe( tap(e => e.preventDefault() ) )).pipe( map(e => [e[0], undefined]) )
+          ).subscribe( async ([e1, e2]) => {
+            const mode = "append";
+            let command = (n) =>{ }
+            if(e1.ctrlKey && !e1.shiftKey){
+              command = (n) => pty.input(`echo ${JSON.stringify(n)}`, 'overwrite');
+            }else if(!e1.ctrlKey && e1.shiftKey){
+              command = (n) => pty.input(`echo ${JSON.stringify(n)}`, 'overwrite');
+            }else{
+              command = (n) => pty.input(`${JSON.stringify(n)}`, mode);
+            }
+            switch(`${e1.target}:${e2 ? "req_"+e2.detail?.type : "drop_"+e1.kind}`){
+              case 'terminal:drop_string': { command(e1.detail); } break;
+              case 'terminal:drop_file'  : { command(e1.detail); } break;
+              case 'terminal:req_http'   : { command(e2.detail?.payload); } break;
+              case 'terminal:req_file'   : { command(e2.detail?.payload); } break;
+              default: console.error(`unknown type in drop event : ${e1.target} ${e1.kind} : ${e2?.detail?.type}`); break;
+            }
           });
 
           /******** other event ********/
-          if(window.chrome.webview){
 
-            const updated$ = fromEvent(window.chrome.webview, 'updated');
+          if(wv){
+
+            fromEvent(wv, 'write').subscribe((e) => { pty.log(`${e.detail}`); });
+            fromEvent(wv, 'prompt').subscribe(async () => { await customPrompt(); });
+
+            const updated$ = fromEvent(wv, 'updated');
             updated$.subscribe(async (e) => { console.log('updated', e); });
 
-            const namedPipe$ = fromEvent(window.chrome.webview, 'namedPipe');
-            namedPipe$.subscribe(e => { console.log("namedPipe", e) });
-
+            const namedPipe$ = fromEvent(wv, 'namedPipe');
+            namedPipe$.subscribe(e => { 
+              console.log("namedPipe", e) 
+              pty.input(e, 'execute');
+            });
           }
           
           /******** onMounted ********/
           onMounted(async () => {
             console.log('app mounted')
-
             termShow.value = true;
-            zoom.value = 0;
-            rawState.value = { ...rawState.value };
-
+            isBusy.value = false;
             nextTick(() => { console.log('app rendered'); });
           });
           return { 
-            termShow, contextList, 
-            onMousemove, onContextmenu, onDrop, onWheel,
-            canvasRef, contextRef, stalkerRef,
-            termRef, onTermMounted, beforeOnKey, onChange, onSubmit,
-            zoom, selected, rendering,
-            testRef
+            isBusy, termShow, state,
+            termRef, onTermMounted, pty, onDrop,
+            fontSize
           }
         }
       });
-      app.component('vue-pane', window.splitpanes.Pane);
-      app.component('vue-split-pane', window.splitpanes.Splitpanes);
 
-      app.component('context-menu', contextmenu);
-      app.component('mouse-stalker', stalker);
-      app.component('canvas-ex', canvasEx);
-      app.component('my-terminal', wtermComponent);
+      app.component('vue-pane', Pane);
+      app.component('vue-split-pane', Splitpanes);
+      app.component('hai-terminal', Haiterm);
       app.mount('#app');
     </script>
   </body>

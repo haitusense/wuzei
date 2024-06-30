@@ -32,6 +32,16 @@ macro_rules! debug {
   } }
 }
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum HuazhiError {
+  #[error("unknown data store error")]
+  Unknown,
+  #[error("unknown data store error")]
+  Success,
+}
+
 pub mod console {
 
   pub unsafe fn alloc_console() {
@@ -128,8 +138,7 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
       Some(n) => { std::env::set_current_dir(&n)?; }
     };
     let path = std::env::current_dir().context("context")?;
-    println!("{} {}", "current dir".blue(), path.display());
-    println!("{} {:?}", "start_url".blue(), url);
+    println!("{}\r\n  current dir : {}\r\n  start_url:{:?}", "navigate".blue(), path.display(), url);
     let dst = match url {
       Some(n) if n.starts_with("https://") || n.starts_with("http://") => {
         self.with_url(n.as_str())
@@ -264,8 +273,6 @@ impl<'w> HuazhiBuilder for WebViewBuilder<'w> {
   }
 
 }
-
-
 
 
 

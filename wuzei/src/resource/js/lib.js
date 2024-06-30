@@ -1,8 +1,27 @@
 //@ts-check
-
 console.log("lib.js")
 
+/**
+ * @param {number} msec
+ * @returns {Promise}
+ */
 const sleep = msec => new Promise(resolve => setTimeout(resolve, msec));
+
+
+/**
+ * リフレッシュレート使うなら
+ * @returns {Promise}
+ */
+const waitAnimationFrame = () => new Promise(resolve => globalThis.requestAnimationFrame(resolve));
+/*
+let start = Date.now();
+for (let i=0;i<10;i++) {
+  await waitAnimationFrame();         // この行で、次の更新タイミングまで待つ
+  const millis = Date.now() - start;
+  console.log(`time : ${millis} ms`); // 経過時刻を取得
+}
+*/
+
 
 /**
  * @param {string} src
@@ -15,14 +34,6 @@ function indoc(src) {
   const regexp = new RegExp(`^[ \\t]{${indent}}`, 'gm');
   return src.replace(regexp, '');
 }
-
-const fruits = Object.freeze({
-  apple: '🍎',
-  banana: '🍌',
-  grape: '🍇',
-  orange: '🟠',
-})
-
 
 async function asyncCheckWebview() {
   //@ts-ignore
@@ -42,8 +53,6 @@ async function asyncCheckWebview() {
   //   console.error('catch', e);
   // }
 }
-
-
 
 /**
  * @param {string} type
@@ -206,22 +215,25 @@ function asyncLoadImage(path) {
   });
 }
 
-/* method */
+/*** method ***/
+
 /**
  * @param {string} path
- * @param {string} subpath
+ * @param {string} subpath --内部でstring/intの判別あり
  */
 const readFile = async (path, subpath) => {
   switch(path.split('.').pop()?.toLowerCase()){
     case 'hraw':
     case 'zip': {
-      const res = await asyncPostJson("readraw", { path: path, subpath: subpath });
-      console.log("read raw file", path, subpath);
+      const json = { path: path, subpath: isNaN(Number(subpath)) ? subpath : Number(subpath) }
+      const res = await asyncPostJson("readraw", json);
+      console.log("read raw file", JSON.stringify(json));
     } break;
     case 'png':
     case 'bmp': {
-      const res = await asyncPostJson("readpng", { path: path });
-      console.log("read png file", path, subpath);
+      const json = { path: path }
+      const res = await asyncPostJson("readpng", json);
+      console.log("read png file", JSON.stringify(json));
     } break;
     default: {
       // const json = { path : e.path };
@@ -231,8 +243,57 @@ const readFile = async (path, subpath) => {
   }
 }
 
+/*** method for term ***/
+
+function onKeySendWithIpc(e){
+  // isTrustedしか流れないのでobject再構成
+  //@ts-ignore
+  window.ipc.postMessage(JSON.stringify({ 
+    type: "test", 
+    payload: {
+      altKey : e.domEvent.altKey,
+      ctrlKey : e.domEvent.ctrlKey,
+      metaKey : e.domEvent.metaKey,
+      shiftKey : e.domEvent.shiftKey,
+      key : e.domEvent.key,
+      charCode : e.domEvent.charCode,
+      code : e.domEvent.code,
+      keyCode : e.domEvent.keyCode,
+    }
+  }));
+}
+
+async function sendWithFetch(type, args){
+  const response = await fetch("http://wuzei.localhost/terminal", { 
+    method: "POST",
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: type,
+      payload: args
+    })
+  });
+  const dst = await response.text();
+  return dst;
+}
+
+// 使用辞めた
+function setStr(){
+  //@ts-ignore
+  String.prototype.insert = function (src, index) {
+    const front = this.slice(0, index);
+    const back = this.slice(index);
+    return front + src + back;
+  };
+  //@ts-ignore
+  String.prototype.overwrite = function (src, index) {
+    const front = this.slice(0, index);
+    const back = this.slice(index+1);
+    return front + src + back;
+  };
+}
+
 export { 
-  sleep, indoc, asyncCheckWebview, 
+  sleep, waitAnimationFrame, indoc, asyncCheckWebview, 
   post, asyncGetTxt, asyncPostJson, asyncPostPixel, asyncPostPng, setState,
   readFile
 };
