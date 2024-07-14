@@ -1,6 +1,6 @@
 [package]
 name = "huazhi"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -19,7 +19,7 @@ serde_json = { workspace = true }
 strum = { version = "0.26", features = ["derive"] }
 
 windows = { version = "*", features = ["Win32_System_Console",] }
-num = "*"
+# num = "*"
 
 tempfile = "3.5.0"
 tokio = { version = "1.36.0", features = ["full"] }
@@ -28,7 +28,7 @@ futures = "*"
 bytes = "*"
 
 clipboard-win = "5.3.1"
-synoptic = "2"
+# synoptic = "2" # Syntax highlighting for Rust applications
 
 # mmf
 winapi = { version = "*", features = [ "memoryapi", "winnt", "errhandlingapi", "namedpipeapi", "winbase", ] }

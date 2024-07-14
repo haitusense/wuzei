@@ -1,8 +1,12 @@
 # History
 
+## 0.1.7 / huazhi 0.1.5 ()
+- change : hraw 0.1.3
+- change : terminal logic blocks used parser
+- disable : memorymapped 
 ## 0.1.6 / huazhi 0.1.4 (2024-06-29)
 - change : rename/refactoring
-- change : Separate terminal logic blocks terminal ```pty```
+- change : Separate terminal logic blocks ```pty```
 - change : history/cursor select&copy&paste/scroll/drop logic/auto wrap in terminal
 - change : add uuid
 - change : hraw 0.1.2 / matrix, scripting, subpath index

@@ -8,8 +8,8 @@ members = [
 [workspace.dependencies]
 huazhi = { path = "./huazhi" }
 
-# hraw = { git = "https://github.com/haitusense/hraw/", features=[] }
-hraw = { path = "../hraw" }
+hraw = { git = "https://github.com/haitusense/hraw/", features=["pixel"], branch="develop-0.1.3" }
+# hraw = { path = "../hraw" }
 
 anyhow = "1.0.81"
 thiserror = "1.0.58"

@@ -79,15 +79,47 @@ impl Args {
 
 /* read resource */
 
+use std::sync::{OnceLock, Arc, Mutex};
+
 static APPNAME: &str = "wuzei";
+
 static RESOURCE: Dir = include_dir!("$CARGO_MANIFEST_DIR/src/resource");
 
-use std::sync::Mutex;
+static ARGS: OnceLock<Mutex<Args>> = OnceLock::new();
 
-static ARGS: std::sync::OnceLock<Mutex<Args>> = std::sync::OnceLock::new();
-static PX: std::sync::OnceLock<Mutex<huazhi::tao::event_loop::EventLoopProxy<huazhi::event_handler::UserEvent>>> = std::sync::OnceLock::new();
+static EVENT_LOOP: OnceLock<Mutex<huazhi::tao::event_loop::EventLoopProxy<huazhi::event_handler::UserEvent>>> = OnceLock::new();
+
+static PIXEL: OnceLock<Arc<Mutex<hraw::prelude::Pixel<i32>>>> = std::sync::OnceLock::new();
 
 fn get_args() -> &'static Mutex<Args> { ARGS.get_or_init(|| Mutex::new(Args::parse_with_attach_console())) }
+
+fn get_pixel() -> &'static Arc<Mutex<hraw::prelude::Pixel<i32>>> {
+  PIXEL.get_or_init(|| {
+    // let path = crate::get_args().lock().unwrap().memorymapped.clone().unwrap();
+    let px = hraw::prelude::Pixel {
+      width : 320,
+      height : 240,
+      data : vec![0i32; 320*240]
+    };
+    Arc::new(Mutex::new(px))
+  })
+}
+
+pub fn pixel_init(width:usize, height:usize) {
+  println!("{}", "init pixel".blue());
+  
+  let mut src = vec![0i32; width*height];
+  for y in 0..height {
+    for x in 0..width {
+      src[x + y * width] = x as i32;
+    }
+  }
+
+  let mut pixel = get_pixel().lock().unwrap();
+  pixel.width = width;
+  pixel.height  = height;
+  pixel.data = src;
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -97,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
   println!("{}", "set window".blue());
   let event_loop = huazhi::tao::event_loop::EventLoopBuilder::<huazhi::event_handler::UserEvent>::with_user_event().build();
   let proxy_mutex = std::sync::Arc::new(std::sync::Mutex::new(event_loop.create_proxy()));
-  PX.get_or_init(|| Mutex::new(event_loop.create_proxy()));
+  EVENT_LOOP.get_or_init(|| Mutex::new(event_loop.create_proxy()));
 
   let window = huazhi::tao::window::WindowBuilder::new()
     .with_title(APPNAME)
@@ -105,7 +137,7 @@ async fn main() -> anyhow::Result<()> {
     .with_min_inner_size(huazhi::wry::dpi::PhysicalSize::new(320.0, 120.0))
     .build(&event_loop).context("err")?;
 
-  logic::mmf_init(320, 240);
+  pixel_init(320, 240);
 
   match huazhi::namedpipe::pipe_builder(args.namedpipe.unwrap(), event_loop.create_proxy(), |res| { 
     if serde_json::from_str::<serde_json::Value>(res).is_ok() {

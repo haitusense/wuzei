@@ -124,60 +124,8 @@ terminal> state
 #### disable
 
 - send from namedpipe
+- memorymapped
 
 ### Scripting
 
-#### by Python
-
-numpy 2.0 is not supported  
-use numpy <= 1.26.0
-
-```ps
-PS> pip install numpy==1.26.0
-```
-
-**detail**
-
-- Entry Point : default is ```main```
-  - Target can be specified in js
-- Args : json to dictionary object
-- Pixel References : use ```Pixel```
-  - IntelliSense throws undefined error, use ```#type: ignore``` to avoid it.
-- Returns : dictionary object (Serialize to Json in rust)
-
-```python
-import numpy as np                  # import library
-
-def main(args):                     # entry point
-  print('args :', args)             # {} when args is empty 
-  Px = Pixel #type: ignore          # call struct in rust
-  pixel = Px.get(10, 10)            # set / get pixel data (i32)
-  Px.set(10, 10, 255)
-  df = Px.to_np()                   # convert to np.ndarray
-  Px.from_np(df)                    # convert from np.ndarray
-  return { 'detail' : 'successed' } # return dictionary object
-```
-
-**numpy2**
-
-- dtype (StringDType)
-- Windows のデフォルト整数型が他のプラットフォームと同様に `int32` から `int64` に変更。
-- ndarray.array の copy キーワードの動作が変更
-  - np.array(..., copy=False)  -> np.array(..., copy=False) 
-
-np.array -> np.asarray 推奨
-
-copy=True   : および任意の dtype 値: 常に新しいコピーを返す。
-copy=None   : 必要に応じてコピーを作成する
-copy=False  : コピーを作成しない
-
-
-ruff>=0.2.0
-pyproject.toml
-```
-[tool.ruff.lint]
-select = ["NPY201"]
-```
-```
-$ ruff check path/to/code/ --select NPY201
-```
+refer to the docs of hraw

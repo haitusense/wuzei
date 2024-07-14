@@ -19,7 +19,7 @@ def lineprof(df, x, y, axis):
   # plt.show()
 
 def main(args):
-  Px = Pixel #type: ignore
+  Px = pixel #type: ignore
   print('args   :', args)
   left   = args.get('left', 0)
   top    = args.get('top', 0)
